@@ -128,8 +128,9 @@ class lmbMapToolPoint(QgsMapTool):
                     # put rubber band at cursor
                     self.rb.movePoint(point)
                     g = QgsGeometry().fromPoint(point)
-                    self.started = False
-                    self.rbFinished.emit(g) 
+                    if g <> None and g.isGeosValid():
+                        self.started = False
+                        self.rbFinished.emit(g) 
   
     #
     # activate tool

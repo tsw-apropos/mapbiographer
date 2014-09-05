@@ -181,9 +181,9 @@ class lmbMapToolLine(QgsMapTool):
 
         
         g = QgsGeometry().fromPolyline(coords)
-    
-        self.rbFinished.emit(g) 
-        self.started = False
+        if g <> None and g.isGeosValid():
+            self.rbFinished.emit(g) 
+            self.started = False
 
     #
     # activate tool

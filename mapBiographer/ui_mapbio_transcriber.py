@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_transcriber.ui'
 #
-# Created: Tue Aug 26 15:46:30 2014
+# Created: Fri Sep  5 14:52:02 2014
 #      by: PyQt4 UI code generator 4.9.3
 #
 # WARNING! All changes made in this file will be lost!
@@ -162,18 +162,6 @@ class Ui_mapbioTranscriber(object):
         self.tbAudioSettings.setPopupMode(QtGui.QToolButton.MenuButtonPopup)
         self.tbAudioSettings.setObjectName(_fromUtf8("tbAudioSettings"))
         self.hlInterviewTools.addWidget(self.tbAudioSettings)
-        self.vlLeftOfTimer = QtGui.QFrame(self.verticalLayoutWidget_2)
-        self.vlLeftOfTimer.setMinimumSize(QtCore.QSize(2, 0))
-        self.vlLeftOfTimer.setMaximumSize(QtCore.QSize(2, 30))
-        self.vlLeftOfTimer.setFrameShape(QtGui.QFrame.VLine)
-        self.vlLeftOfTimer.setFrameShadow(QtGui.QFrame.Sunken)
-        self.vlLeftOfTimer.setObjectName(_fromUtf8("vlLeftOfTimer"))
-        self.hlInterviewTools.addWidget(self.vlLeftOfTimer)
-        self.lblTimer = QtGui.QLabel(self.verticalLayoutWidget_2)
-        self.lblTimer.setScaledContents(False)
-        self.lblTimer.setAlignment(QtCore.Qt.AlignCenter)
-        self.lblTimer.setObjectName(_fromUtf8("lblTimer"))
-        self.hlInterviewTools.addWidget(self.lblTimer)
         self.vlConductInterview.addLayout(self.hlInterviewTools)
         self.hlBelowToolBar = QtGui.QFrame(self.verticalLayoutWidget_2)
         self.hlBelowToolBar.setFrameShape(QtGui.QFrame.HLine)
@@ -475,7 +463,6 @@ class Ui_mapbioTranscriber(object):
         self.tbMediaPlay.setToolTip(QtGui.QApplication.translate("mapbioTranscriber", "Play / Pause Audio", None, QtGui.QApplication.UnicodeUTF8))
         self.tbAudioSettings.setToolTip(QtGui.QApplication.translate("mapbioTranscriber", "Select Playback Device", None, QtGui.QApplication.UnicodeUTF8))
         self.tbAudioSettings.setText(QtGui.QApplication.translate("mapbioTranscriber", "...", None, QtGui.QApplication.UnicodeUTF8))
-        self.lblTimer.setText(QtGui.QApplication.translate("mapbioTranscriber", "00:00:00", None, QtGui.QApplication.UnicodeUTF8))
         self.lblSectionList.setText(QtGui.QApplication.translate("mapbioTranscriber", "Sections", None, QtGui.QApplication.UnicodeUTF8))
         self.lblCodeList.setText(QtGui.QApplication.translate("mapbioTranscriber", "Code List", None, QtGui.QApplication.UnicodeUTF8))
         self.lwProjectCodes.setSortingEnabled(False)

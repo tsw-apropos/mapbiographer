@@ -2700,7 +2700,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.currentFeature = 'pt'
             sql = "UPDATE interview_sections "
             sql += "SET geom_source = '%s', " % self.currentFeature
-            sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
+            sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
             if self.cbFeatureStatus.currentIndex() <> 1: 
@@ -2770,7 +2770,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.currentFeature = 'ln'
             sql = "UPDATE interview_sections "
             sql += "SET geom_source = '%s', " % self.currentFeature
-            sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
+            sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
             if self.cbFeatureStatus.currentIndex() <> 1: 
@@ -2840,7 +2840,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.currentFeature = 'pl'
             sql = "UPDATE interview_sections "
             sql += "SET geom_source = '%s', " % self.currentFeature
-            sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
+            sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
             if self.cbFeatureStatus.currentIndex() <> 1: 

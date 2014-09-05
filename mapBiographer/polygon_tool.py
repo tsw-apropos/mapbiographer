@@ -180,9 +180,9 @@ class lmbMapToolPolygon(QgsMapTool):
             lastPt = pt
              
         g = QgsGeometry().fromPolygon([coords])
-    
-        self.rbFinished.emit(g) 
-        self.started = False
+        if g <> None and g.isGeosValid():
+            self.rbFinished.emit(g) 
+            self.started = False
 
     #
     # activate tool

@@ -11,7 +11,7 @@
 name=LOUIS Map Biographer
 qgisMinimumVersion=2.4
 description=Effectively conduct direct to digital map biographies and traditional land use studies. Requires pyspatialite, pyaudio and pydub libraries. Install the required libraries before installing this plugin.
-version=0.8
+version=0.8.1
 author=Apropos Information Systems Inc.
 email=info@aproposinfosystems.com
 
