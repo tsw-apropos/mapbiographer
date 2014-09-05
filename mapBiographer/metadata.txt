@@ -24,7 +24,7 @@ email=info@aproposinfosystems.com
 
 # tags are comma separated with spaces allowed
 tags=Aboriginal, Indigenous, Traditional Knowledge, Traditional Land Use, Interviews, Use and Occupancy Mapping, Heritage, Local Knowledge
-homepage==http://aproposinfosystems.com/products/mapbiographer
+homepage=http://aproposinfosystems.com/products/mapbiographer
 tracker=http://github.com/tsw-apropos/mapbiographer/issues
 repository=http://github.com/tsw-apropos/mapbiographer
 icon=settings.png
