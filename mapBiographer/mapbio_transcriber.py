@@ -1643,8 +1643,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         if sectionCode <>  self.currentSectionCode:
             # update section list
             self.previousContentCode = contentCode
-            self.lwSectionList.currentItem().setText(sectionCode)
             self.updateSectionCode(sectionCode)
+            lstIdx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+            if lstIdx <> -1:
+                self.cbFeatureStatus.setItemText(lstIdx, 'same as %s' % sectionCode)
+            self.lwSectionList.currentItem().setText(sectionCode)
         # now check for changes to media start and end times
         media_start_time = self.seconds2timeString(self.spMediaStart.value())
         media_end_time = self.seconds2timeString(self.spMediaEnd.value())
@@ -2095,6 +2098,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql = ''
         if self.currentFeature in ('pt','ln','pl'):
             self.cur.execute(sql)
+        # update references to section code
+        sql = "UPDATE interview_sections "
+        sql += "SET geom_source = '%s' " % sectionCode
+        sql += "WHERE interview_id = %d AND geom_source = '%s';" % (self.interview_id, self.currentSectionCode)
+        self.cur.execute(sql)
 
     #
     # feature status changed

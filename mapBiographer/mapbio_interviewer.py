@@ -1926,6 +1926,9 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             # update section list
             self.previousContentCode = contentCode
             self.lwSectionList.currentItem().setText(sectionCode)
+            lstIdx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+            if lstIdx <> -1:
+                self.cbFeatureStatus.setItemText(lstIdx, 'same as %s' % sectionCode)
             self.updateSectionCode(sectionCode)
         # update section table
         self.previousSecurity = self.default_security[self.cbSectionSecurity.currentIndex()]
@@ -2280,6 +2283,11 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             sql = ''
         if self.currentFeature in ('pt','ln','pl'):
             self.cur.execute(sql)
+        # update references to section code
+        sql = "UPDATE interview_sections "
+        sql += "SET geom_source = '%s' " % sectionCode
+        sql += "WHERE interview_id = %d AND geom_source = '%s';" % (self.interview_id, self.currentSectionCode)
+        self.cur.execute(sql)
 
     #
     # feature status changed by user changing combobox
