@@ -2983,7 +2983,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
 
         dRec = False
         # check for referenced use in interview
-        sql = "SELECT count(*) FROM interview_sections WHERE interview_id = %d" % self.partId
+        sql = "SELECT count(*) FROM interview_sections WHERE interview_id = %d" % self.intvId
         rs = self.cur.execute(sql)
         confData = rs.fetchall()
         if confData[0][0] > 0:

@@ -2172,7 +2172,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                     rs = self.cur.execute(sql)
                     idData = rs.fetchall()
                     if len(idData) > 0:
-                        self.points_layer.select(idData[0][0])
+                        self.point_id = idData[0][0]
+                        self.points_layer.select(self.point_id)
                     else:
                         self.currentFeature = 'ns'
                 elif featureType == 'ln':
@@ -2181,7 +2182,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                     rs = self.cur.execute(sql)
                     idData = rs.fetchall()
                     if len(idData) > 0:
-                        self.lines_layer.select(idData[0][0])
+                        self.line_id = idData[0][0]
+                        self.lines_layer.select(self.line_id)
                     else:
                         self.currentFeature = 'ns'
                 elif featureType == 'pl':
@@ -2190,7 +2192,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                     rs = self.cur.execute(sql)
                     idData = rs.fetchall()
                     if len(idData) > 0:
-                        self.polygons_layer.select(idData[0][0])
+                        self.polygon_id = idData[0][0]
+                        self.polygons_layer.select(self.polygon_id)
                     else:
                         self.currentFeature = 'ns'
             self.pbDeleteSection.setEnabled(True)
