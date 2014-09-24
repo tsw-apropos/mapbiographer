@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_transcriber.ui'
 #
-# Created: Fri Sep  5 14:52:02 2014
+# Created: Wed Sep 24 13:08:21 2014
 #      by: PyQt4 UI code generator 4.9.3
 #
 # WARNING! All changes made in this file will be lost!
@@ -284,6 +284,7 @@ class Ui_mapbioTranscriber(object):
         self.spMediaStart = QtGui.QSpinBox(self.layoutWidget)
         self.spMediaStart.setMinimumSize(QtCore.QSize(350, 0))
         self.spMediaStart.setMaximumSize(QtCore.QSize(350, 16777215))
+        self.spMediaStart.setMaximum(1000000000)
         self.spMediaStart.setObjectName(_fromUtf8("spMediaStart"))
         self.grSectionEdit.addWidget(self.spMediaStart, 0, 1, 1, 1)
         self.lblSecurity = QtGui.QLabel(self.layoutWidget)
@@ -304,6 +305,7 @@ class Ui_mapbioTranscriber(object):
         self.spMediaEnd = QtGui.QSpinBox(self.layoutWidget)
         self.spMediaEnd.setMinimumSize(QtCore.QSize(350, 0))
         self.spMediaEnd.setMaximumSize(QtCore.QSize(350, 16777215))
+        self.spMediaEnd.setMaximum(1000000000)
         self.spMediaEnd.setObjectName(_fromUtf8("spMediaEnd"))
         self.grSectionEdit.addWidget(self.spMediaEnd, 1, 1, 1, 1)
         self.lblMediaStart = QtGui.QLabel(self.layoutWidget)
