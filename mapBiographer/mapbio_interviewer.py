@@ -84,6 +84,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.rapidCaptureMode = False
         self.recordAudio = False
         self.audioDeviceIndex = None
+        self.paRecordInstance = None
         self.bitDepth = 16
         self.samplingFrequency = 44100
         self.interview_length = '00:00'
@@ -187,7 +188,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.finishInterview()
             self.disableInterviewPanel()
         self.closeInterviewer()
-
+        if self.paRecordInstance <> None:
+            self.paRecordInstance.terminate()
     #
     # connect map tools
 
@@ -605,27 +607,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         # method body
         #
         # set defaults
-        # interview info
         self.startTime = 0
-        self.pauseDuration = 0
-        self.startPause = 0
-        self.audioPartNo = 1
-        self.point_id = 0
-        self.line_id = 0
-        self.polygon_id = 0
-        self.interviewState = 'New'
-        # section info
-        self.section_id = 0
-        self.sequence = 0
-        self.currentSequence = 0
-        self.previousContentCode = ''
-        self.previousSecurity = 'PU'
-        self.previousTags = ''
-        self.previousUsePeriod = 'U'
-        self.previousAnnualVariation = 'U'
-        self.previousNote = ''
-        self.currentFeature = 'ns'
-        self.selectedCodeCount = 0
+        self.lblTimer.setText('00:00:00')
         # set widget visibility and status
         self.tbInterviewer.setCurrentWidget(self.pgInterview)
         self.pgInterview.setEnabled(True)
@@ -939,24 +922,27 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         # method body
         # create array to store info
         self.deviceList = []
-        p = pyaudio.PyAudio()
+        self.paRecordInstance = None
+        self.paRecordInstance = pyaudio.PyAudio()
         # add devices with input channels and CD quality record ability
         self.cbAudioInputDevice.clear()
         bestChoice = 0
         x = 0
-        for i in range(p.get_device_count()):
-            devinfo = p.get_device_info_by_index(i)
+        for i in range(self.paRecordInstance.get_device_count()):
+            devinfo = self.paRecordInstance.get_device_info_by_index(i)
             if devinfo['maxInputChannels'] > 0:
-                if p.is_format_supported(44100.0,
-                                     input_device=devinfo['index'],
-                                     input_channels=devinfo['maxInputChannels'],
-                                     input_format=pyaudio.paInt16):
-                    self.deviceList.append([i,devinfo['name']])
-                    self.cbAudioInputDevice.addItem(devinfo['name'])
-                    if devinfo['name'] == 'default':
-                        bestChoice = x
-                    x += 1
-        p.terminate()
+                try:
+                    if self.paRecordInstance.is_format_supported(44100.0,
+                                         input_device=devinfo['index'],
+                                         input_channels=devinfo['maxInputChannels'],
+                                         input_format=pyaudio.paInt16):
+                        self.deviceList.append([i,devinfo['name']])
+                        self.cbAudioInputDevice.addItem(devinfo['name'])
+                        if devinfo['name'] == 'default':
+                            bestChoice = x
+                        x += 1
+                except:
+                    pass 
         self.audioDeviceIndex = self.deviceList[bestChoice][0]
         self.cbAudioInputDevice.setCurrentIndex(bestChoice)
 
@@ -985,8 +971,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         RECORD_SECONDS = 2
         # create instance
         try:
-            p = pyaudio.PyAudio()
-            stream = p.open(format=FORMAT,
+            stream = self.paRecordInstance.open(format=FORMAT,
                             channels=CHANNELS,
                             rate=RATE,
                             input=True,
@@ -1007,7 +992,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             # done recording, close stream
             stream.stop_stream()
             stream.close()
-            p.terminate()
         except:
             pass
         if doPlayBack:
@@ -1063,7 +1047,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         dirName = s.value('mapBiographer/projectDir')
         afPrefix = os.path.join(dirName, self.interview_code)
         # create worker
-        worker = audioRecorder(afPrefix,self.audioDeviceIndex)
+        worker = audioRecorder(afPrefix,self.audioDeviceIndex,self.paRecordInstance)
         # start worker in new thread
         thread = QtCore.QThread(self)
         worker.moveToThread(thread)
@@ -1175,6 +1159,29 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                 QtGui.QMessageBox.warning(self, 'DEBUG',
                     self.myself(), QtGui.QMessageBox.Ok)
         # method body
+        #
+        # set defaults
+        # interview info
+        self.startTime = 0
+        self.pauseDuration = 0
+        self.startPause = 0
+        self.audioPartNo = 1
+        self.point_id = 0
+        self.line_id = 0
+        self.polygon_id = 0
+        self.interviewState = 'New'
+        # section info
+        self.section_id = 0
+        self.sequence = 0
+        self.currentSequence = 0
+        self.previousContentCode = ''
+        self.previousSecurity = 'PU'
+        self.previousTags = ''
+        self.previousUsePeriod = 'U'
+        self.previousAnnualVariation = 'U'
+        self.previousNote = ''
+        self.currentFeature = 'ns'
+        self.selectedCodeCount = 0
         # set audio section
         self.audioSection = 1
         # start timer thread
@@ -1301,6 +1308,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         # adjust interface
         # disable
         self.disableSectionControls()
+        self.cbRecordAudio.setCurrentIndex(0)
         # enable close button
         self.pbCloseInterview.setEnabled(True)
         # disable pause and finish

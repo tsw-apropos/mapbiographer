@@ -1660,6 +1660,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql += 'SET media_end_time = "%s" ' % media_start_time
             sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, precendingSectionCode)
             self.cur.execute(sql)
+            self.audioStartPosition = self.timeString2seconds(media_start_time)
+            self.hsSectionMedia.setMinimum(self.audioStartPosition)
+            self.hsSectionMedia.setValue(self.audioStartPosition)
         # if end times have changed changed the following section if it exists
         if self.audioEndPosition <> self.spMediaEnd.value() and \
         self.lwSectionList.currentRow() < self.lwSectionList.count()-1:
@@ -1668,6 +1671,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql += 'SET media_start_time = "%s" ' % media_end_time
             sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, followingSectionCode)
             self.cur.execute(sql)
+            self.audioEndPosition = self.timeString2seconds(media_end_time)
+            self.hsSectionMedia.setMaximum(self.audioEndPosition)
+            self.hsSectionMedia.setValue(self.audioStartPosition)
         # update section table
         self.previousSecurity = self.default_security[self.cbSectionSecurity.currentIndex()]
         self.previousTags = self.pteTags.document().toPlainText()
@@ -1867,6 +1873,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.shiftKey = False
         # determine nature of current feature and select
         if self.lwSectionList.currentItem() <> None and self.interviewState == 'View':
+            if self.mediaState == 'playing':
+                self.playPauseMedia()
             # use debug track order of calls
             if self.editDebug:
                 if self.debugFile == True:

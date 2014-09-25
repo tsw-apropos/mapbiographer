@@ -36,7 +36,7 @@ class audioRecorder(QtCore.QObject):
     #
     # initialize worker
 
-    def __init__( self, afPrefix, audioDeviceIndex, *args, **kwargs ):
+    def __init__( self, afPrefix, audioDeviceIndex, paRecordInstance, *args, **kwargs ):
         QtCore.QObject.__init__(self, *args, **kwargs)
         self.state = 'Initialized'
         self.status.emit(self.state)
@@ -44,6 +44,7 @@ class audioRecorder(QtCore.QObject):
         self.afPrefix = afPrefix
         self.partNum = 1
         self.audioDeviceIndex = audioDeviceIndex
+        self.paRecordInstance = paRecordInstance
 
     #
     # setup run loop for worker
@@ -89,10 +90,8 @@ class audioRecorder(QtCore.QObject):
         CHANNELS = 1
         RATE = 44100
         WAVE_OUTPUT_FILENAME = fName
-        # create pyaudio stream object
-        p = pyaudio.PyAudio()
         # set parameters and start
-        stream = p.open(format=FORMAT,
+        stream = self.paRecordInstance.open(format=FORMAT,
                 channels=CHANNELS,
                 rate=RATE,
                 input=True,
@@ -107,12 +106,11 @@ class audioRecorder(QtCore.QObject):
         # once recording stops close stream
         stream.stop_stream()
         stream.close()
-        p.terminate()
         # save output to file
         if self.state in ('stopped','stopped with error'):
             wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
             wf.setnchannels(CHANNELS)
-            wf.setsampwidth(p.get_sample_size(FORMAT))
+            wf.setsampwidth(self.paRecordInstance.get_sample_size(FORMAT))
             wf.setframerate(RATE)
             wf.writeframes(b''.join(frames))
             wf.close()

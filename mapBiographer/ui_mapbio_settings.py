@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_settings.ui'
 #
-# Created: Mon Sep 22 15:49:05 2014
+# Created: Thu Sep 25 11:34:01 2014
 #      by: PyQt4 UI code generator 4.9.3
 #
 # WARNING! All changes made in this file will be lost!
@@ -1052,7 +1052,7 @@ class Ui_mapBiographerSettings(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 0.8.3 - Alpha Testing Version</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 0.8.5 - Alpha Testing Version</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">PLEASE NOTE: This version of LOUIS Map Biographer is an early release as part of our Alpha Testing Program that will operate from 2014-09-02 to 2014-10-31. This version of LOUIS Map Biographer has been released to get user feedback on functional adequacy and ease-of-use; it is not recommended for use with live studies. For more information about the testing program or to submit comments about this version please visit <a href=\"http://aproposinfosystems.com/products/mapbiographer\"><span style=\" text-decoration: underline; color:#0000ff;\">aproposinfosystems.com/products/mapbiographer</span></a> or our contact page at <a href=\"http://aproposinfosystems.com/contact\"><span style=\" text-decoration: underline; color:#0000ff;\">aproposinfosystems.com/contact</span></a>.</p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"
