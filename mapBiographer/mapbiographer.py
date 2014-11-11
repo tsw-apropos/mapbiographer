@@ -27,7 +27,6 @@ from qgis.core import *
 import resources_rc
 # Import the code for the dialog
 from mapbio_settings import mapBiographerSettings
-from mapbio_interviewer import mapBiographerInterviewer
 from mapbio_transcriber import mapBiographerTranscriber
 import os.path
 
@@ -63,32 +62,22 @@ class mapBiographer:
         self.manageAction.triggered.connect(self.manage)
         self.toolBar.addAction(self.manageAction)
         
-        # Interview Action
-        self.interviewAction = QtGui.QAction(
+        # LMB Action
+        self.lmbAction = QtGui.QAction(
             QtGui.QIcon(":/plugins/mapbiographer/interview.png"),
-            u"Conduct Interviews", self.iface.mainWindow())
+            u"Conduct, Import and Transcribe Interviews", self.iface.mainWindow())
         # connection action to run method
-        self.interviewAction.triggered.connect(self.interview)
-        self.toolBar.addAction(self.interviewAction)
-
-        # Transcribe Action
-        self.transcribeAction = QtGui.QAction(
-            QtGui.QIcon(":/plugins/mapbiographer/transcribe.png"),
-            u"Transcribe Interviews", self.iface.mainWindow())
-        # connection action to run method
-        self.transcribeAction.triggered.connect(self.transcribe)
-        self.toolBar.addAction(self.transcribeAction)
+        self.lmbAction.triggered.connect(self.lmb)
+        self.toolBar.addAction(self.lmbAction)
 
         # add to menu
         self.iface.addPluginToMenu(u"&LOUIS Map Biographer", self.manageAction)
-        self.iface.addPluginToMenu(u"&LOUIS Map Biographer", self.interviewAction)
-        self.iface.addPluginToMenu(u"&LOUIS Map Biographer", self.transcribeAction)
+        self.iface.addPluginToMenu(u"&LOUIS Map Biographer", self.lmbAction)
 
     def unload(self):
         # Remove the plugin menu item and icon
         self.iface.removePluginMenu(u"&LOUIS Map Biographer", self.manageAction)
-        self.iface.removePluginMenu(u"&LOUIS Map Biographer", self.interviewAction)
-        self.iface.removePluginMenu(u"&LOUIS Map Biographer", self.transcribeAction)
+        self.iface.removePluginMenu(u"&LOUIS Map Biographer", self.lmbAction)
 
         # remove tool bar
         self.toolBar.hide()
@@ -104,8 +93,8 @@ class mapBiographer:
         # Run the dialog event loop
         result = self.dlg.exec_()
 
-    # open interview panel
-    def interview(self):
+    # open lmb operations panel
+    def lmb(self):
 
         # save tool bar and panel state
         geom = self.iface.mainWindow().saveGeometry()
@@ -115,40 +104,16 @@ class mapBiographer:
         s.setValue('mapBiographer/state', state)
         # hide everything
         interfaceObjects = self.iface.mainWindow().children()
-        for object in interfaceObjects:
-            if 'QDockWidget' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
-            elif 'QToolBar' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
-            elif 'PythonConsole' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
-        # display panel
-        self.panel = mapBiographerInterviewer(self.iface)
-
-    # open transcribe panel
-    def transcribe(self):
-
-        # save tool bar and panel state
-        geom = self.iface.mainWindow().saveGeometry()
-        state = self.iface.mainWindow().saveState()
-        s = QtCore.QSettings()
-        s.setValue('mapBiographer/geom', geom)
-        s.setValue('mapBiographer/state', state)
-        # hide everything
-        interfaceObjects = self.iface.mainWindow().children()
-        for object in interfaceObjects:
-            if 'QDockWidget' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
-            elif 'QToolBar' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
-            elif 'PythonConsole' in str(object.__class__):
-                if object.isVisible() == True:
-                    object.hide()
+        for obj in interfaceObjects:
+            if 'QDockWidget' in str(obj.__class__):
+                if obj.isVisible() == True:
+                    obj.hide()
+            elif 'QToolBar' in str(obj.__class__):
+                if obj.isVisible() == True:
+                    obj.hide()
+            elif 'PythonConsole' in str(obj.__class__):
+                if obj.isVisible() == True:
+                    obj.hide()
         # display panel
         self.panel = mapBiographerTranscriber(self.iface)
   

@@ -24,8 +24,7 @@
 from qgis.core import *
 from PyQt4 import QtCore, QtGui
 import traceback, datetime, time, os, math, sys
-import pyaudio
-import wave
+import pyaudio, pydub, wave
 
 #
 # setup audio thread
@@ -36,26 +35,35 @@ class audioRecorder(QtCore.QObject):
     #
     # initialize worker
 
-    def __init__( self, afPrefix, audioDeviceIndex, paRecordInstance, *args, **kwargs ):
+    def __init__( self, afPrefix, audioDeviceIndex, paRecordInstance, intCode, *args, **kwargs ):
+
         QtCore.QObject.__init__(self, *args, **kwargs)
         self.state = 'Initialized'
         self.status.emit(self.state)
         self.abort = False
+        self.merge = False
         self.afPrefix = afPrefix
         self.partNum = 1
+        self.intCode = intCode
         self.audioDeviceIndex = audioDeviceIndex
         self.paRecordInstance = paRecordInstance
+        #
+        # have two options for writing audio files
+        #   bufferedWrite = True - stores data in memory and then writes file
+        #   bufferedWrite = False - writes continually to disk
+        #
+        self.bufferedWrite = True
 
     #
     # setup run loop for worker
 
     def run( self ):
-        #partNum = 1
+
         try:
             self.state = 'recording'
             self.status.emit(self.state)
             while self.abort == False:
-                afName = self.afPrefix + '_%d.wav' % self.partNum
+                afName = self.afPrefix + '-%03d.wav' % self.partNum
                 self.doRecording(afName)
             if self.abort == True:
                 self.status.emit(self.state)
@@ -68,9 +76,17 @@ class audioRecorder(QtCore.QObject):
     #
     # have means to kill process and stop recording appropriately
 
-    def kill( self ):
+    def stop( self ):
         self.abort = True
         self.state ='stopped'
+        self.status.emit(self.state)
+
+    #
+    # have means to kill process, stop recording and consolidate recordings
+
+    def stopNMerge( self ):
+        self.merge = True
+        self.stop()
 
     #
     # set the part number for the recordings so we can support pauses
@@ -97,23 +113,82 @@ class audioRecorder(QtCore.QObject):
                 input=True,
                 input_device_index=self.audioDeviceIndex,
                 frames_per_buffer=CHUNK)
-        # have array to store frames
-        frames = []
-        # do this as long as worker state value is set to recording
-        while self.state == 'recording':
-            data = stream.read(CHUNK)
-            frames.append(data)
-        # once recording stops close stream
-        stream.stop_stream()
-        stream.close()
-        # save output to file
-        if self.state in ('stopped','stopped with error'):
+
+        if self.bufferedWrite == True:
+            # option 1 - store to array and then write to file
+            # have array to store frames
+            frames = []
+            # do this as long as worker state value is set to recording
+            while self.state == 'recording':
+                data = stream.read(CHUNK)
+                frames.append(data)
+            # once recording stops close stream
+            stream.stop_stream()
+            stream.close()
+            # save output to file
+            if self.state in ('stopped','stopped with error'):
+                wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(self.paRecordInstance.get_sample_size(FORMAT))
+                wf.setframerate(RATE)
+                wf.writeframes(b''.join(frames))
+                wf.close()
+        else:
+            # option 2 - write to disk as it happens should increase system
+            # robustness assuming disk can handle continual writing
+            # create output file
             wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(self.paRecordInstance.get_sample_size(FORMAT))
             wf.setframerate(RATE)
-            wf.writeframes(b''.join(frames))
+            # do this as long as worker state value is set to recording
+            while self.state == 'recording':
+                data = stream.read(CHUNK)
+                wf.writeframes(data)
+            # grab anything else that might be coming in 
+            data = stream.read(CHUNK)
+            # once recording stops close stream
+            stream.stop_stream()
+            stream.close()
+            # write last data chunk
+            wf.writeframes(data)
+            # save output to file
             wf.close()
+            # consolidate if appropriate
+        if self.merge == True:
+            self.consolidateRecordings()
+
+    #
+    # consolidate audio - merge different audio files for an interview together
+
+    def consolidateRecordings(self):
+
+        # get list of audio files
+        s = QtCore.QSettings()
+        dirName = s.value('mapBiographer/projectDir')
+        contents = os.listdir(dirName)
+        cCnt = len(self.intCode)
+        match1 = [elem for elem in contents if elem[:cCnt] == self.intCode]
+        inFiles = [elem for elem in match1 if elem[len(elem)-4:] == '.wav']
+        inFiles.sort()
+        outFName = os.path.join(dirName,self.intCode+'.wav')
+        if len(inFiles) == 1:
+            # rename existing file
+            os.rename(os.path.join(dirName,inFiles[0]),outFName)
+        elif len(inFiles) > 1   :
+            # read in audio files
+            x = 0
+            for inFile in inFiles:
+                seg1 = pydub.AudioSegment.from_wav(os.path.join(dirName,inFile))
+                if x == 0:
+                    combined = seg1
+                    x = 1
+                else:
+                    combined = combined + seg1
+            combined.export(outFName, format="wav")
+            # delete source files
+            for inFile in inFiles:
+                os.remove(os.path.join(dirName,inFile))
 
     # set class signals
     status = QtCore.pyqtSignal(str)

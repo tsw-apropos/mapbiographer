@@ -29,6 +29,7 @@ from pyspatialite import dbapi2 as sqlite
 import os, datetime, time
 import pyaudio, wave, pydub
 from ui_mapbio_interviewer import Ui_mapbioInterviewer
+from mapbio_navigator import mapBiographerNavigator
 from audio_recorder import audioRecorder
 from point_tool import lmbMapToolPoint
 from line_tool import lmbMapToolLine
@@ -101,13 +102,13 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.projectDir = '.'
         self.projectDB = ''
         self.qgsProject = ''
-        self.baseGroups = []
-        self.baseGroupIdxs = []
-        self.boundaryLayerName = ''
-        self.boundaryLayer = None
-        self.enableReference = ''
-        self.referenceLayerName = ''
-        self.referenceLayer = None
+        #self.baseGroups = []
+        #self.baseGroupIdxs = []
+        #self.boundaryLayerName = ''
+        #self.boundaryLayer = None
+        #self.enableReference = ''
+        #self.referenceLayerName = ''
+        #self.referenceLayer = None
         self.qgsProjectLoading = True
         # add panel
         self.iface.mainWindow().addDockWidget(QtCore.Qt.RightDockWidgetArea, self)
@@ -117,25 +118,19 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         # signals and slots setup
         # connect map tools
         self.connectMapTools()
-        # map options
-        QtCore.QObject.connect(self.cbBase, QtCore.SIGNAL("currentIndexChanged(int)"), self.selectBase)
-        QtCore.QObject.connect(self.cbBoundary, QtCore.SIGNAL("currentIndexChanged(int)"), self.viewBoundary)
-        QtCore.QObject.connect(self.cbReference, QtCore.SIGNAL("currentIndexChanged(int)"), self.viewReference)
         # connect interview selection panel controls
-        QtCore.QObject.connect(self, QtCore.SIGNAL("topLevelChanged(bool)"), self.adjustPanelSize)
         QtCore.QObject.connect(self.cbInterviewSelection, QtCore.SIGNAL("currentIndexChanged(int)"), self.updateInterviewInfo)
         QtCore.QObject.connect(self.pbClose, QtCore.SIGNAL("clicked()"), self.closeInterviewer)
         # audio
         QtCore.QObject.connect(self.cbRecordAudio, QtCore.SIGNAL("currentIndexChanged(int)"), self.updateAudioRecordingState)
-        QtCore.QObject.connect(self.cbAudioInputDevice, QtCore.SIGNAL("currentIndexChanged(int)"), self.updateAudioDevice)
+        self.tbAudioSettings.setMenu(QtGui.QMenu(self.tbAudioSettings))
         QtCore.QObject.connect(self.pbSoundTest, QtCore.SIGNAL("clicked()"), self.doSoundTest)
         # interview control
-        QtCore.QObject.connect(self.pbConductInterview, QtCore.SIGNAL("clicked()"), self.enableInterviewPanel)
+        QtCore.QObject.connect(self.pbConductInterview, QtCore.SIGNAL("clicked()"), self.enableInterview)
         # interview panel controls
         QtCore.QObject.connect(self.pbStart, QtCore.SIGNAL("clicked()"), self.startInterview)
         QtCore.QObject.connect(self.pbPause, QtCore.SIGNAL("clicked()"), self.pauseInterview)
         QtCore.QObject.connect(self.pbFinish, QtCore.SIGNAL("clicked()"), self.finishInterview)
-        QtCore.QObject.connect(self.pbCloseInterview, QtCore.SIGNAL("clicked()"), self.disableInterviewPanel)
         # section edit widgets
         QtCore.QObject.connect(self.lwSectionList, QtCore.SIGNAL("itemSelectionChanged()"), self.selectFeature)
         QtCore.QObject.connect(self.cbSectionSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.enableSectionSaveCancel)
@@ -143,7 +138,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         # Note: tags is managed by lwProjectCodes method
         QtCore.QObject.connect(self.cbTimePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.enableSectionSaveCancel)
         QtCore.QObject.connect(self.cbAnnualVariation, QtCore.SIGNAL("currentIndexChanged(int)"), self.enableSectionSaveCancel)
-        QtCore.QObject.connect(self.leSectionNote, QtCore.SIGNAL("textChanged(QString)"), self.enableSectionSaveCancel)
+        QtCore.QObject.connect(self.pteSectionNote, QtCore.SIGNAL("textChanged()"), self.enableSectionSaveCancel)
         QtCore.QObject.connect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.addRemoveSectionTags)
         # connect section editing buttons
         QtCore.QObject.connect(self.pbSaveSection, QtCore.SIGNAL("clicked()"), self.saveSectionEdits)
@@ -154,6 +149,9 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         canvasCRS = self.canvas.mapSettings().destinationCrs()
         layerCRS = QgsCoordinateReferenceSystem(3857)
         self.xform = QgsCoordinateTransform(canvasCRS, layerCRS)
+        #
+        # check for valid audio device
+        self.populateAudioDeviceList()
         #
         # final preparation of conducting interviews
         # open project
@@ -172,11 +170,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.closeInterviewer()
         # activate pan tool
         self.activatePanTool()
-        # set canvas view
-        if self.boundaryLayer <> None:
-            self.canvas.setExtent(self.boundaryLayer.extent())
-        else:
-            self.canvas.zoomToFullExtent()
 
     #
     # redefine close event to make sure it closes properly because panel close
@@ -234,21 +227,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         QtCore.QObject.connect(self.tbPan, QtCore.SIGNAL("clicked()"), self.activatePanTool)
         # non-spatial
         QtCore.QObject.connect(self.tbNonSpatial, QtCore.SIGNAL("clicked()"), self.createNonSpatialSection)
-        # get button for Node Tool
-        self.nodeButton = None
-        dtb = self.iface.digitizeToolBar()
-        for cld in dtb.children():
-            if 'QToolButton' in str(cld.__class__) and len(cld.actions()) > 0:
-                if 'NodeTool' in cld.actions()[0].objectName():
-                    self.nodeButton = cld
-                    break
-        # get button for Move Tool
-        self.moveButton = None
-        for cld in dtb.children():
-            if 'QToolButton' in str(cld.__class__) and len(cld.actions()) > 0:
-                if 'MoveFeature' in cld.actions()[0].objectName():
-                    self.moveButton = cld
-                    break
 
     #
     # disconnect map tools
@@ -357,7 +335,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         projData = rs.fetchall()
         # basic setup
         self.leProjectCode.setText(projData[0][1])
-        self.populateInterviewList()
         self.pbConductInterview.setEnabled(True)
         # content codes
         self.default_codes = ['Non-spatial']
@@ -411,54 +388,70 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         if QgsProject.instance().fileName() <> self.qgsProject:
             self.iface.newProject()
             QgsProject.instance().read(QtCore.QFileInfo(self.qgsProject))
-        # gather information about what is available in the project
-        # groups
-        projectGroups = self.iface.legendInterface().groups()
-        # set index to identify difference between stored setting list and project index
-        for group in self.baseGroups:
-            self.baseGroupIdxs[self.baseGroups.index(group)] = projectGroups.index(group)
-        self.cbBase.clear()
-        self.cbBase.addItems(self.baseGroups)
-        # check against settings to determine if we can proceed
-        visibleGroupSet = False
-        for group in self.baseGroups:
-            idx = projectGroups.index(group)
-            if not (group in projectGroups):
-                return(-1)
-            elif visibleGroupSet == False:
-                if self.iface.legendInterface().isGroupVisible(idx):
-                    self.cbBase.setCurrentIndex(self.baseGroups.index(group))
-                    visibleGroupSet = True
-            else:
-                self.iface.legendInterface().setGroupVisible(idx,False)
-        # layers
-        validLayers = []
-        layers = self.iface.legendInterface().layers()
-        for layer in layers:
-            validLayers.append(layer.name())
-            if layer.name() == self.boundaryLayerName:
-                self.boundaryLayer = layer
-                if self.iface.legendInterface().isLayerVisible(layer):
-                    self.cbBoundary.setCurrentIndex(1)
-                else:
-                    self.cbBoundary.setCurrentIndex(0)
-            if layer.name() == self.referenceLayerName:
-                self.referenceLayer = layer
-                if self.iface.legendInterface().isLayerVisible(layer):
-                    self.cbReference.setCurrentIndex(1)
-                else:
-                    self.cbReference.setCurrentIndex(0)
-        # boundary layer
-        if not (self.boundaryLayerName in validLayers):
-            return(-1)
-        # reference layer
-        if self.enableReference == True:
-            self.cbReference.setEnabled(True)
-            if not (self.referenceLayerName in validLayers):
-                return(-1)
-        else:
-            self.cbReference.setDisabled(True)
+        ## gather information about what is available in the project
+        ## groups
+        #projectGroups = self.iface.legendInterface().groups()
+        ## set index to identify difference between stored setting list and project index
+        #for group in self.baseGroups:
+            #self.baseGroupIdxs[self.baseGroups.index(group)] = projectGroups.index(group)
+        #self.cbBase.clear()
+        #self.cbBase.addItems(self.baseGroups)
+        ## check against settings to determine if we can proceed
+        #visibleGroupSet = False
+        #for group in self.baseGroups:
+            #idx = projectGroups.index(group)
+            #if not (group in projectGroups):
+                #return(-1)
+            #elif visibleGroupSet == False:
+                #if self.iface.legendInterface().isGroupVisible(idx):
+                    #self.cbBase.setCurrentIndex(self.baseGroups.index(group))
+                    #visibleGroupSet = True
+            #else:
+                #self.iface.legendInterface().setGroupVisible(idx,False)
+        ## layers
+        #validLayers = []
+        #layers = self.iface.legendInterface().layers()
+        #for layer in layers:
+            #validLayers.append(layer.name())
+            #if layer.name() == self.boundaryLayerName:
+                #self.boundaryLayer = layer
+                #if self.iface.legendInterface().isLayerVisible(layer):
+                    #self.cbBoundary.setCurrentIndex(1)
+                #else:
+                    #self.cbBoundary.setCurrentIndex(0)
+            #if layer.name() == self.referenceLayerName:
+                #self.referenceLayer = layer
+                #if self.iface.legendInterface().isLayerVisible(layer):
+                    #self.cbReference.setCurrentIndex(1)
+                #else:
+                    #self.cbReference.setCurrentIndex(0)
+        ## boundary layer
+        #if not (self.boundaryLayerName in validLayers):
+            #return(-1)
+        ## reference layer
+        #if self.enableReference == True:
+            #self.cbReference.setEnabled(True)
+            #if not (self.referenceLayerName in validLayers):
+                #return(-1)
+        #else:
+            #self.cbReference.setDisabled(True)
         self.projectLoading = False
+        # open navigator panel
+        self.navigatorPanel = mapBiographerNavigator(self.iface)
+        #
+        # open overview panel
+        iobjs = self.iface.mainWindow().children()
+        for obj in iobjs:
+            if 'Overview' == obj.objectName() and 'QDockWidget' in str(obj.__class__):
+                self.ovPanel = obj
+                break
+
+        if self.ovPanel <> None:
+            self.ovPanel.show()
+#            QgsMessageLog.logMessage('found')
+        #
+        # populate lists
+        self.populateInterviewList()
             
         return(0)
 
@@ -533,24 +526,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.pteParticipants.setPlainText('')
 
     #
-    # adjust panel size to ensure widget visibility when not docked
-
-    def adjustPanelSize( self ):
-
-        # use debug track order of calls
-        if self.basicDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-        # method body
-        if self.isFloating() == True:
-            self.setFixedWidth(413)
-        else:
-            self.setFixedWidth(405)
-
-    #
     # close interviewer interface
     
     def closeInterviewer(self):
@@ -563,6 +538,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                 QtGui.QMessageBox.warning(self, 'DEBUG',
                     self.myself(), QtGui.QMessageBox.Ok)
         # method body
+        # close navigator
+        self.navigatorPanel.close()
         # disconnect map tools
         self.disconnectMapTools()
         # close database connection
@@ -576,11 +553,6 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         state = s.value('mapBiographer/state')
         self.iface.mainWindow().restoreGeometry(geom)
         self.iface.mainWindow().restoreState(state)
-        # reset canvas view
-        if self.boundaryLayer <> None:
-            self.canvas.setExtent(self.boundaryLayer.extent())
-        else:
-            self.canvas.zoomToFullExtent()
         # deselect active layer and select active layer again
         tv = self.iface.layerTreeView()
         tv.selectionModel().clear()
@@ -594,7 +566,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
     #
     # enable interview panel in prepration to start an interview
 
-    def enableInterviewPanel(self):
+    def enableInterview(self):
 
         # use debug track order of calls
         if self.basicDebug:
@@ -632,7 +604,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
     #
     # disable interview panel after interviews are completed
 
-    def disableInterviewPanel(self):
+    def disableInterview(self):
 
         # use debug track order of calls
         if self.basicDebug:
@@ -659,7 +631,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.cbFeatureStatus.setCurrentIndex(0)
             self.cbTimePeriod.setCurrentIndex(0)
             self.cbAnnualVariation.setCurrentIndex(0)
-            self.leSectionNote.setText('')
+            self.pteSectionNote.setPlainText('')
             selectedItems = self.lwProjectCodes.selectedItems()
             for item in selectedItems:
                 self.lwProjectCodes.setItemSelected(item,False)
@@ -925,8 +897,9 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.paRecordInstance = None
         self.paRecordInstance = pyaudio.PyAudio()
         # add devices with input channels and CD quality record ability
-        self.cbAudioInputDevice.clear()
         bestChoice = 0
+        # clear menu actions
+        self.tbAudioSettings.menu().clear()
         x = 0
         for i in range(self.paRecordInstance.get_device_count()):
             devinfo = self.paRecordInstance.get_device_info_by_index(i)
@@ -936,15 +909,26 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
                                          input_device=devinfo['index'],
                                          input_channels=devinfo['maxInputChannels'],
                                          input_format=pyaudio.paInt16):
+                        # add to device list
                         self.deviceList.append([i,devinfo['name']])
-                        self.cbAudioInputDevice.addItem(devinfo['name'])
+                        # create a menu item action
+                        menuItem_AudioDevice = self.tbAudioSettings.menu().addAction(devinfo['name'])
+                        # create lambda function
+                        receiver = lambda deviceIndex=i: self.selectDevice(deviceIndex)
+                        # link lambda function to menu action
+                        self.connect(menuItem_AudioDevice, QtCore.SIGNAL('triggered()'), receiver)
+                        # add to menu
+                        self.tbAudioSettings.menu().addAction(menuItem_AudioDevice)
                         if devinfo['name'] == 'default':
                             bestChoice = x
                         x += 1
                 except:
                     pass 
         self.audioDeviceIndex = self.deviceList[bestChoice][0]
-        self.cbAudioInputDevice.setCurrentIndex(bestChoice)
+        if len(self.deviceList) > 0:
+            self.setWindowTitle('LOUIS Map Biographer - Interview Tool (Audio Device: %s)' % self.deviceList[bestChoice][1])
+        else:
+            self.setWindowTitle('LOUIS Map Biographer - Interview Tool (No Audio Device Found)')
 
     #
     # test microphone
@@ -1338,6 +1322,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.conn.commit()
         # update interview list
         self.populateInterviewList()
+        # disable interview
+        self.disableInterview()
         
 
     #####################################################
@@ -1383,7 +1369,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.cbFeatureStatus.setDisabled(True)
         self.cbTimePeriod.setDisabled(True)
         self.cbAnnualVariation.setDisabled(True)
-        self.leSectionNote.setDisabled(True)
+        self.pteSectionNote.setDisabled(True)
         # edit buttons
         self.pbSaveSection.setDisabled(True)
         self.pbCancelSection.setDisabled(True)
@@ -1425,7 +1411,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.cbFeatureStatus.setEnabled(True)
         self.cbTimePeriod.setEnabled(True)
         self.cbAnnualVariation.setEnabled(True)
-        self.leSectionNote.setEnabled(True)
+        self.pteSectionNote.setEnabled(True)
 
     #
     # enable save, cancel and delete buttons
@@ -1943,7 +1929,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.previousTags = self.pteTags.document().toPlainText()
         self.previousUsePeriod = self.default_time_periods[self.cbTimePeriod.currentIndex()]
         self.previousAnnualVariation = self.default_annual_variation[self.cbAnnualVariation.currentIndex()]
-        self.previousNote = self.leSectionNote.text().replace("'","''")
+        self.previousNote = self.pteSectionNote.document().toPlainText().replace("'","''")
         sql = 'UPDATE interview_sections SET '
         sql += "content_code = '%s', " % contentCode
         sql += "section_code = '%s', " % sectionCode
@@ -1975,6 +1961,8 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
             self.polygons_layer.deselect(self.polygons_layer.selectedFeaturesIds())
         if editVector == True:
             self.activateSpatialEdit()
+        else:
+            self.activatePanTool()
             
     #
     # cancel edits to section
@@ -2254,7 +2242,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.pteTags.setPlainText(self.sectionData[0][5])
         self.cbTimePeriod.setCurrentIndex(self.default_time_periods.index(self.sectionData[0][6]))
         self.cbAnnualVariation.setCurrentIndex(self.default_annual_variation.index(self.sectionData[0][7]))
-        self.leSectionNote.setText(self.sectionData[0][8])
+        self.pteSectionNote.setPlainText(self.sectionData[0][8])
         # deselect items
         for i in range(self.lwProjectCodes.count()):
             item = self.lwProjectCodes.item(i)
@@ -2549,7 +2537,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.tbPan.setChecked(False)
         # disable everything option but saving or cancelling
         self.enableSectionCancel(True)
-        
+        # check if vector editing
         if self.nodeButton == None:
             QtGui.QMessageBox.warning(self, 'QGIS Error',
                 'The Node Tool could not be found. Can not edit feature.', QtGui.QMessageBox.Ok)
@@ -2624,7 +2612,7 @@ class mapBiographerInterviewer(QtGui.QDockWidget, Ui_mapbioInterviewer):
         self.tbPan.setChecked(False)
         # disable everything option but saving or cancelling
         self.enableSectionCancel(True)
-        
+        # check if vector editing
         if self.moveButton == None:
             QtGui.QMessageBox.warning(self, 'QGIS Error',
                 'The Move Tool could not be found. Can not edit feature.', QtGui.QMessageBox.Ok)
