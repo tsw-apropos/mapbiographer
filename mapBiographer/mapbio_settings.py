@@ -25,8 +25,8 @@ from PyQt4 import QtCore, QtGui
 from qgis.core import *
 from ui_mapbio_settings import Ui_mapBiographerSettings
 from pyspatialite import dbapi2 as sqlite
-import os, datetime
-import inspect, shutil
+import os, datetime, zipfile, time
+import inspect, shutil, glob
 from pydub import AudioSegment
 
 class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
@@ -37,23 +37,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.iface = iface
 
         # debug setup
-        self.settingsDebug = False
-        self.projectDebug = False
-        self.participantDebug = False
-        self.interviewsDebug = False
-        self.debugFile = True
-        self.df = None
-        self.debugFileName = './lmb_settings.log'
-        if self.settingsDebug or self.projectDebug or self.participantDebug or self.interviewsDebug:
+        self.debug = False
+        if self.debug:
             self.myself = lambda: inspect.stack()[1][3]
-            self.df = open(self.debugFileName,'w')
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write('\n--Initialization--\n')
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
 
         # settings variable
         self.setModal(False)
@@ -70,7 +58,9 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.enableReference = ''
         self.referenceLayer = ''
         self.qgsProjectChanged = True
-
+        self.projCodes = []
+        self.projDefs = []
+        
         # object variables
         self.conn = None
         self.cur = None
@@ -90,6 +80,8 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.interviewerList = []
         self.interviewStatus = 'N'
 
+        self.setWindowTitle('LMB Manager')
+
         # trigger control
         self.settingsState = 'load'
         self.projectState = 'load'
@@ -100,91 +92,92 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # main form
         QtCore.QObject.connect(self.pbDialogClose, QtCore.SIGNAL("clicked()"), self.closeDialog)
         # map biographer settings tab actions
-        QtCore.QObject.connect(self.tbSelectProjectDir, QtCore.SIGNAL("clicked()"), self.getProjectDir)
-        QtCore.QObject.connect(self.cbProjectDatabase, QtCore.SIGNAL("currentIndexChanged(int)"), self.selectProjectDB)
-        QtCore.QObject.connect(self.tbSelectQgsProject, QtCore.SIGNAL("clicked()"), self.readQgsProject)
-        QtCore.QObject.connect(self.tblBaseGroups, QtCore.SIGNAL("itemSelectionChanged()"), self.enableBaseGroupRemoval)
-        QtCore.QObject.connect(self.pbAddBaseGroup, QtCore.SIGNAL("clicked()"), self.addBaseGroup)
-        QtCore.QObject.connect(self.pbRemoveBaseGroup, QtCore.SIGNAL("clicked()"), self.removeBaseGroup)
-        QtCore.QObject.connect(self.cbBoundaryLayer, QtCore.SIGNAL("currentIndexChanged(int)"), self.updateBoundary)
-        QtCore.QObject.connect(self.cbEnableReference, QtCore.SIGNAL("currentIndexChanged(int)"), self.setReferenceStatus)
-        QtCore.QObject.connect(self.cbReferenceLayer, QtCore.SIGNAL("currentIndexChanged(int)"), self.updateReference)
+        QtCore.QObject.connect(self.tbSelectProjectDir, QtCore.SIGNAL("clicked()"), self.settingsGetDir)
+        QtCore.QObject.connect(self.cbProjectDatabase, QtCore.SIGNAL("currentIndexChanged(int)"), self.settingsSelectDB)
+        QtCore.QObject.connect(self.cbMaxScale, QtCore.SIGNAL("currentIndexChanged(int)"), self.settingsEnableEdit)
+        QtCore.QObject.connect(self.cbMinScale, QtCore.SIGNAL("currentIndexChanged(int)"), self.settingsEnableEdit)
+        QtCore.QObject.connect(self.cbZoomRangeNotices, QtCore.SIGNAL("currentIndexChanged(int)"), self.settingsEnableEdit)
+        QtCore.QObject.connect(self.tbSelectQgsProject, QtCore.SIGNAL("clicked()"), self.qgisReadProject)
+        QtCore.QObject.connect(self.tblBaseGroups, QtCore.SIGNAL("itemSelectionChanged()"), self.baseGroupEnableRemoval)
+        QtCore.QObject.connect(self.pbAddBaseGroup, QtCore.SIGNAL("clicked()"), self.baseGroupAdd)
+        QtCore.QObject.connect(self.pbRemoveBaseGroup, QtCore.SIGNAL("clicked()"), self.baseGroupRemove)
+        QtCore.QObject.connect(self.cbBoundaryLayer, QtCore.SIGNAL("currentIndexChanged(int)"), self.boundaryLayerUpdate)
+        QtCore.QObject.connect(self.cbEnableReference, QtCore.SIGNAL("currentIndexChanged(int)"), self.referenceLayerSetStatus)
+        QtCore.QObject.connect(self.cbReferenceLayer, QtCore.SIGNAL("currentIndexChanged(int)"), self.referenceLayerUpdate)
         # tab controls
-        QtCore.QObject.connect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.saveSettings)
-        QtCore.QObject.connect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.cancelSettings)
-        QtCore.QObject.connect(self.pbExport, QtCore.SIGNAL("clicked()"), self.exportInterviews)
-        # heritage account
-        QtCore.QObject.connect(self.rdoHasHeritage, QtCore.SIGNAL("clicked(bool)"), self.userChangedHeritageStatus)
-        QtCore.QObject.connect(self.rdoNoHeritage, QtCore.SIGNAL("clicked(bool)"), self.userChangedHeritageStatus)
-        QtCore.QObject.connect(self.leHeritageCommunity, QtCore.SIGNAL("textChanged(QString)"), self.enableSettingsEdit)
-        QtCore.QObject.connect(self.leHeritageUser, QtCore.SIGNAL("textChanged(QString)"), self.enableSettingsEdit)
-        QtCore.QObject.connect(self.pbPullData, QtCore.SIGNAL("clicked()"), self.pullData)
-        QtCore.QObject.connect(self.pbPushData, QtCore.SIGNAL("clicked()"), self.pushData)
+        QtCore.QObject.connect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.settingsSave)
+        QtCore.QObject.connect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.settingsCancel)
+        QtCore.QObject.connect(self.pbCreateHeritage1Archive, QtCore.SIGNAL("clicked()"), self.exportHeritageV1)
+        QtCore.QObject.connect(self.pbCreateHeritage2Archive, QtCore.SIGNAL("clicked()"), self.exportHeritageV2)
+        QtCore.QObject.connect(self.pbCreateGeoJSONArchive, QtCore.SIGNAL("clicked()"), self.exportGeoJSON)
         #
         # project details tab states
-        QtCore.QObject.connect(self.leProjectCode, QtCore.SIGNAL("textChanged(QString)"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteProjectDescription, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.leProjectTags, QtCore.SIGNAL("textChanged(QString)"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteProjectNote, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteProjectCitations, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteContentCodes, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteTimePeriods, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pteAnnualVariation, QtCore.SIGNAL("textChanged()"), self.enableProjectEdit)
-        QtCore.QObject.connect(self.pbProjectSave, QtCore.SIGNAL("clicked()"), self.saveProjectTable)
-        QtCore.QObject.connect(self.pbProjectCancel, QtCore.SIGNAL("clicked()"), self.cancelProjectTable)
+        QtCore.QObject.connect(self.leProjectCode, QtCore.SIGNAL("textChanged(QString)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.pteProjectDescription, QtCore.SIGNAL("textChanged()"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.leProjectTags, QtCore.SIGNAL("textChanged(QString)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.pteProjectNote, QtCore.SIGNAL("textChanged()"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.pteContentCodes, QtCore.SIGNAL("textChanged()"), self.projectRefreshCodes)
+        QtCore.QObject.connect(self.pteDateAndTime, QtCore.SIGNAL("textChanged()"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.pteTimeOfYear, QtCore.SIGNAL("textChanged()"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.cbDefaultCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.cbPointCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.cbLineCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.cbPolygonCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectEnableEdit)
+        QtCore.QObject.connect(self.pbProjectSave, QtCore.SIGNAL("clicked()"), self.projectTableWrite)
+        QtCore.QObject.connect(self.pbProjectCancel, QtCore.SIGNAL("clicked()"), self.projectTableCancel)
         #
         # people basic info actions
-        QtCore.QObject.connect(self.pbParticipantNew, QtCore.SIGNAL("clicked()"), self.newParticipantEdit)
-        QtCore.QObject.connect(self.pbParticipantCancel, QtCore.SIGNAL("clicked()"), self.cancelParticipantEdit)
-        QtCore.QObject.connect(self.pbParticipantSave, QtCore.SIGNAL("clicked()"), self.updateParticipantRecord)
-        QtCore.QObject.connect(self.pbParticipantDelete, QtCore.SIGNAL("clicked()"), self.deleteParticipantRecord)
+        QtCore.QObject.connect(self.pbParticipantNew, QtCore.SIGNAL("clicked()"), self.participantNew)
+        QtCore.QObject.connect(self.pbParticipantCancel, QtCore.SIGNAL("clicked()"), self.participantCancelEdit)
+        QtCore.QObject.connect(self.pbParticipantSave, QtCore.SIGNAL("clicked()"), self.participantWrite)
+        QtCore.QObject.connect(self.pbParticipantDelete, QtCore.SIGNAL("clicked()"), self.participantDelete)
         # people basic info states
-        QtCore.QObject.connect(self.tblParticipants, QtCore.SIGNAL("itemSelectionChanged()"), self.checkParticipantSelection)
+        QtCore.QObject.connect(self.tblParticipants, QtCore.SIGNAL("itemSelectionChanged()"), self.participantCheckSelection)
         # people address actions
-        QtCore.QObject.connect(self.pbAddNew, QtCore.SIGNAL("clicked()"), self.newAddressEdit)
-        QtCore.QObject.connect(self.pbAddCancel, QtCore.SIGNAL("clicked()"), self.cancelAddressEdit)
-        QtCore.QObject.connect(self.pbAddSave, QtCore.SIGNAL("clicked()"), self.updateAddressRecord)
-        QtCore.QObject.connect(self.pbAddDelete, QtCore.SIGNAL("clicked()"), self.deleteAddressRecord)
+        QtCore.QObject.connect(self.pbAddNew, QtCore.SIGNAL("clicked()"), self.addressNew)
+        QtCore.QObject.connect(self.pbAddCancel, QtCore.SIGNAL("clicked()"), self.addressCancelEdit)
+        QtCore.QObject.connect(self.pbAddSave, QtCore.SIGNAL("clicked()"), self.addressWrite)
+        QtCore.QObject.connect(self.pbAddDelete, QtCore.SIGNAL("clicked()"), self.addressDelete)
         # people address states
-        QtCore.QObject.connect(self.tblAddresses, QtCore.SIGNAL("itemSelectionChanged()"), self.checkAddressSelection)
+        QtCore.QObject.connect(self.tblAddresses, QtCore.SIGNAL("itemSelectionChanged()"), self.addressCheckSelection)
         # people telecom actions
-        QtCore.QObject.connect(self.pbTelNew, QtCore.SIGNAL("clicked()"), self.newTelecomEdit)
-        QtCore.QObject.connect(self.pbTelCancel, QtCore.SIGNAL("clicked()"), self.cancelTelecomEdit)
-        QtCore.QObject.connect(self.pbTelSave, QtCore.SIGNAL("clicked()"), self.updateTelecomRecord)
-        QtCore.QObject.connect(self.pbTelDelete, QtCore.SIGNAL("clicked()"), self.deleteTelecomRecord)
+        QtCore.QObject.connect(self.pbTelNew, QtCore.SIGNAL("clicked()"), self.telecomNew)
+        QtCore.QObject.connect(self.pbTelCancel, QtCore.SIGNAL("clicked()"), self.telecomCancelEdits)
+        QtCore.QObject.connect(self.pbTelSave, QtCore.SIGNAL("clicked()"), self.telecomWrite)
+        QtCore.QObject.connect(self.pbTelDelete, QtCore.SIGNAL("clicked()"), self.telecomDelete)
         # people telecom states
-        QtCore.QObject.connect(self.tblTelecoms, QtCore.SIGNAL("itemSelectionChanged()"), self.checkTelecomSelection)
+        QtCore.QObject.connect(self.tblTelecoms, QtCore.SIGNAL("itemSelectionChanged()"), self.telecomCheckSelection)
         #
         # interview basic info actions
-        QtCore.QObject.connect(self.pbIntNew, QtCore.SIGNAL("clicked()"), self.newInterviewEdit)
-        QtCore.QObject.connect(self.pbIntCancel, QtCore.SIGNAL("clicked()"), self.cancelInterviewEdit)
-        QtCore.QObject.connect(self.pbIntSave, QtCore.SIGNAL("clicked()"), self.updateInterviewRecord)
-        QtCore.QObject.connect(self.pbIntDelete, QtCore.SIGNAL("clicked()"), self.deleteInterviewRecord)
+        QtCore.QObject.connect(self.pbIntNew, QtCore.SIGNAL("clicked()"), self.interviewNew)
+        QtCore.QObject.connect(self.pbIntCancel, QtCore.SIGNAL("clicked()"), self.interviewCancel)
+        QtCore.QObject.connect(self.pbIntSave, QtCore.SIGNAL("clicked()"), self.interviewWrite)
+        QtCore.QObject.connect(self.pbIntDelete, QtCore.SIGNAL("clicked()"), self.interviewDelete)
         # interview basic info states
-        QtCore.QObject.connect(self.tblInterviews, QtCore.SIGNAL("itemSelectionChanged()"), self.checkInterviewSelection)
+        QtCore.QObject.connect(self.tblInterviews, QtCore.SIGNAL("itemSelectionChanged()"), self.interviewCheckSelection)
         # interview participant actions
-        QtCore.QObject.connect(self.pbIntPartNew, QtCore.SIGNAL("clicked()"), self.newInterviewParticipantEdit)
-        QtCore.QObject.connect(self.pbIntPartCancel, QtCore.SIGNAL("clicked()"), self.cancelInterviewParticipantEdit)
-        QtCore.QObject.connect(self.pbIntPartSave, QtCore.SIGNAL("clicked()"), self.updateInterviewParticipantRecord)
-        QtCore.QObject.connect(self.pbIntPartDelete, QtCore.SIGNAL("clicked()"), self.deleteInterviewParticipantRecord)
+        QtCore.QObject.connect(self.pbIntPartNew, QtCore.SIGNAL("clicked()"), self.interviewParticipantNew)
+        QtCore.QObject.connect(self.pbIntPartCancel, QtCore.SIGNAL("clicked()"), self.interviewParticipantCancel)
+        QtCore.QObject.connect(self.pbIntPartSave, QtCore.SIGNAL("clicked()"), self.interviewParticipantWrite)
+        QtCore.QObject.connect(self.pbIntPartDelete, QtCore.SIGNAL("clicked()"), self.interviewParticipantDelete)
         # interview participant states
-        QtCore.QObject.connect(self.tblInterviewParticipants, QtCore.SIGNAL("itemSelectionChanged()"), self.checkInterviewParticipantSelection)
+        QtCore.QObject.connect(self.tblInterviewParticipants, QtCore.SIGNAL("itemSelectionChanged()"), self.interviewParticipantCheckSelection)
         # participant edit selection
         QtCore.QObject.connect(self.cbIntPartName, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewParticipantSelection)
         
         try:
             self.settingsState = 'load'
-            self.readSettings()
-            self.disableSettingsEdit()
+            self.settingsRead()
+            self.settingsDisableEdit()
             if os.path.exists(os.path.join(self.dirName,self.projectDB)):
-                self.openDB()
-                self.readDB()
-                self.disableProjectEdit()
+                self.dbOpen()
+                self.dbRead()
+                self.projectDisableEdit()
                 self.projectState = 'load'
-                self.enableProject()
+                self.projectEnable()
         except:
-            self.disableProject()
-            self.disableProjectEdit()
+            self.projectDisable()
+            self.projectDisableEdit()
 
         self.settingsState = 'edit'
         self.projectState = 'edit'
@@ -194,20 +187,14 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
 
     def closeDialog(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if self.projectDB <> '' and self.conn <> None:
-            self.closeDB()
+            self.dbClose()
         tv = self.iface.layerTreeView()
         tv.selectionModel().clear()
         self.iface.newProject()
-        if self.settingsDebug or self.projectDebug or self.participantDebug or self.interviewsDebug:
-            self.df.close()
         self.close()
 
 
@@ -218,54 +205,23 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # get project directory
 
-    def getProjectDir(self):
+    def settingsGetDir(self):
         
-        dirName = QtGui.QFileDialog.getExistingDirectory(self, 'Select Project Directory')
-        if dirName <> '':
-            self.leProjectDir.setText(dirName)
-            self.dirName = dirName
-        self.enableSettingsEdit()
-
-    #
-    # heritage status manually changed
-
-    def userChangedHeritageStatus(self):
-
-        if self.settingsStatus <> 'load':
-            self.setHeritageAccess()
-            self.enableSettingsEdit()
-
-    #
-    # get heritage access status
-
-    def setHeritageAccess(self):
-        
-        if self.rdoHasHeritage.isChecked():
-            self.hasHeritage = True
-            self.leHeritageCommunity.setEnabled(True)
-            self.leHeritageUser.setEnabled(True)
-            self.pbPullData.setEnabled(True)
-            self.pbPushData.setEnabled(True)
+        executable = QtGui.QFileDialog.getOpenFileName(self, 'Select Image File', "Image Files (*.png *.jpg *.bmp *.tiff)")
+        if executable <> '':
+            self.leMarxanPath.setText(executable)
         else:
-            self.hasHeritage = False
-            self.leHeritageCommunity.setDisabled(True)
-            self.leHeritageUser.setDisabled(True)
-            self.pbPullData.setDisabled(True)
-            self.pbPushData.setDisabled(True)
+            self.leMarxanPath.setText('')
 
     #
     # select project database
 
-    def selectProjectDB(self):
+    def settingsSelectDB(self):
         
         if self.projectState <> 'load':
-            if self.projectDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
+            #
             if self.cbProjectDatabase.currentIndex() == 1:
                 newName, ok = QtGui.QInputDialog.getText(self, 'DB Name', 'Enter name for new database:')
                 if ok:
@@ -276,7 +232,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                         self.projectDB = newName
                 else:
                     self.projectDB = ''
-                    self.disableProject()
+                    self.projectDisable()
                     self.cbProjectDatabase.setCurrentIndex(0)
                 if self.projectDB <> '':
                     # read file if it exists
@@ -288,134 +244,100 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                         self.setEnabled(True)
                         self.cbProjectDatabase.addItem(self.projectDB)
                         self.cbProjectDatabase.setCurrentIndex(self.cbProjectDatabase.count()-1)
-                        self.openDB()
-                        self.readDB()
-                        self.enableProject()
-                        self.enableSettingsEdit()
+                        self.dbOpen()
+                        self.dbRead()
+                        self.projectEnable()
+                        self.settingsEnableEdit()
             elif self.cbProjectDatabase.currentIndex() == 0:
                 self.projectDB = ''
-                self.disableProject()
+                self.projectDisable()
                 self.cbProjectDatabase.setCurrentIndex(0)
             elif self.cbProjectDatabase.count() > 2:
                 self.projectDB = self.cbProjectDatabase.currentText()
-                self.openDB()
-                self.readDB()
-                self.enableProject()
-                self.enableSettingsEdit()
+                self.dbOpen()
+                self.dbRead()
+                self.projectEnable()
+                self.settingsEnableEdit()
 
     #
     # enable settings buttons
 
-    def enableSettingsEdit(self):
+    def settingsEnableEdit(self):
 
         if self.settingsState <> 'load' and self.pbDialogClose.isEnabled():
-            if self.settingsDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
             # enable save and cancel
             self.pbSaveSettings.setEnabled(True)
             self.pbCancelSettings.setEnabled(True)
-            # disable download
-            self.pbPullData.setDisabled(True)
-            self.pbPushData.setDisabled(True)
+            self.twMapBioSettings.tabBar().setDisabled(True)
             # other tabs
-            self.twProject.setDisabled(True)
-            self.twParticipants.setDisabled(True)
-            self.twInterviews.setDisabled(True)
+            self.tbProjectDetails.setDisabled(True)
+            self.tbPeople.setDisabled(True)
+            self.tbInterviews.setDisabled(True)
             # dialog close
             self.pbDialogClose.setDisabled(True)
 
     #
     # disable settings buttons
 
-    def disableSettingsEdit(self):
+    def settingsDisableEdit(self):
         
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # disable save and cancel
         self.pbSaveSettings.setDisabled(True)
         self.pbCancelSettings.setDisabled(True)
-        # enable download
-        if self.hasHeritage:
-            self.pbPullData.setEnabled(True)
-            self.pbPushData.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
         # other tabs
-        self.twProject.setEnabled(True)
-        self.twParticipants.setEnabled(True)
-        self.twInterviews.setEnabled(True)
+        self.tbProjectDetails.setEnabled(True)
+        self.tbPeople.setEnabled(True)
+        self.tbInterviews.setEnabled(True)
         # dialog close
         self.pbDialogClose.setEnabled(True)
         
     #
     # save LMB settings
 
-    def saveSettings(self):
+    def settingsSave(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         s = QtCore.QSettings()
-        self.heritageCommunity = self.leHeritageCommunity.text()
-        self.heritageUser = self.leHeritageUser.text()
         s.setValue('mapBiographer/projectDir', self.dirName)
-        s.setValue('mapBiographer/hasHeritage', str(self.hasHeritage))
-        if self.hasHeritage == False:
-            self.heritageCommunity = 'N/A'
-            self.heritageUser = 'N/A'
-            self.leHeritageCommunity.setText(self.heritageCommunity)
-            self.leHeritageUser.setText(self.heritageUser)
-        s.setValue('mapBiographer/heritageCommunity', self.heritageCommunity)
-        s.setValue('mapBiographer/heritageUser', self.heritageUser)
         s.setValue('mapBiographer/projectDB', self.projectDB)
+        s.setValue('mapBiographer/maxScale', self.cbMaxScale.currentText())
+        s.setValue('mapBiographer/minScale', self.cbMinScale.currentText())
+        s.setValue('mapBiographer/zoomNotices', self.cbZoomRangeNotices.currentText())
         s.setValue('mapBiographer/qgsProject', self.qgsProject)
         s.setValue('mapBiographer/baseGroups', self.baseGroups)
         s.setValue('mapBiographer/boundaryLayer', self.boundaryLayer)
         s.setValue('mapBiographer/enableReference', str(self.enableReference))
         s.setValue('mapBiographer/referenceLayer', self.referenceLayer)
-        self.disableSettingsEdit()
+        self.settingsDisableEdit()
         
     #
     # cancel LM settings
 
-    def cancelSettings(self):
+    def settingsCancel(self):
         
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
-        self.readSettings()
-        self.disableSettingsEdit()
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.settingsRead()
+        self.settingsDisableEdit()
         
     #
     # read LMB settings
 
-    def readSettings(self):
+    def settingsRead(self):
 
         self.settingsState = 'load'
         self.projectState = 'load'
         
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # project dir
         s = QtCore.QSettings()
         rv = s.value('mapBiographer/projectDir')
@@ -423,32 +345,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             self.dirName = '.'
         else:
             self.dirName = rv
-        # connection settings
         self.leProjectDir.setText(self.dirName)
-        rv = s.value('mapBiographer/hasHeritage')
-        if rv == None:
-            self.hasHeritage = False
-        else:
-            if rv == 'False':
-                self.hasHeritage = False
-            else:
-                self.hasHeritage = True
-        if self.hasHeritage == True:
-            self.heritageCommunity = s.value('mapBiographer/heritageCommunity')
-            self.leHeritageCommunity.setText(self.heritageCommunity)
-            self.heritageUser = s.value('mapBiographer/heritageUser')
-            self.leHeritageUser.setText(self.heritageUser)
-            self.rdoHasHeritage.setChecked(True)
-            self.leHeritageCommunity.setEnabled(True)
-            self.leHeritageUser.setEnabled(True)
-        else:
-            self.heritageCommunity = 'N/A'
-            self.leHeritageCommunity.setText('N/A')
-            self.heritageUser = 'N/A'
-            self.leHeritageUser.setText('N/A')
-            self.rdoNoHeritage.setChecked(True)
-            self.leHeritageCommunity.setDisabled(True)
-            self.leHeritageUser.setDisabled(True)
         # populate project database list
         self.cbProjectDatabase.clear()
         self.cbProjectDatabase.addItem('--None Selected--')
@@ -470,26 +367,39 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # map settings
         rv = s.value('mapBiographer/qgsProject')
         if rv <> None and os.path.exists(rv) and self.qgsProjectChanged:
-            self.loadQgsProject(rv)
+            self.qgisLoadProject(rv)
         else:
             # blank values if project invalid
-            self.setNoQgsProject()
-
+            self.qgisSetNoProject()
+        rv = s.value('mapBiographer/maxScale')
+        if rv <> None:
+            idx = self.cbMaxScale.findText(rv,QtCore.Qt.MatchExactly)
+            self.cbMaxScale.setCurrentIndex(idx)
+        else:
+            self.cbMaxScale.setCurrentIndex(0)
+        rv = s.value('mapBiographer/minScale')
+        if rv <> None:
+            idx = self.cbMinScale.findText(rv,QtCore.Qt.MatchExactly)
+            self.cbMinScale.setCurrentIndex(idx)
+        else:
+            self.cbMinScale.setCurrentIndex(9)
+        rv = s.value('mapBiographer/zoomNotices')
+        if rv <> None:
+            idx = self.cbZoomRangeNotices.findText(rv,QtCore.Qt.MatchExactly)
+            self.cbZoomRangeNotices.setCurrentIndex(idx)
+        else:
+            self.cbZoomRangeNotices.setCurrentIndex(0)
         self.projectState = 'edit'
         self.settingsState = 'edit'
 
     #
     # set no QGIS project
 
-    def setNoQgsProject(self):
+    def qgisSetNoProject(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.leQgsProject.setText('')
         self.qgsProject = ''
         self.tblBaseGroups.clear()
@@ -505,37 +415,29 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read QGIS proejct
 
-    def readQgsProject(self):
+    def qgisReadProject(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         projectName = QtGui.QFileDialog.getOpenFileName(self, 'Select QGIS project', self.dirName, '*.qgs')
         if os.path.exists(projectName):
             self.qgsProjectChanged = True
             self.leQgsProject.setText(projectName)
             self.qgsProject = projectName
-            self.loadQgsProject(projectName)
+            self.qgisLoadProject(projectName)
         else:
-            self.setNoQgsProject()
-        self.enableSettingsEdit()
+            self.qgisSetNoProject()
+        self.settingsEnableEdit()
 
     #
     # load QgsProject
 
-    def loadQgsProject( self, projectName ):
+    def qgisLoadProject( self, projectName ):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         s = QtCore.QSettings()
         if QgsProject.instance().fileName() <> projectName:
             self.iface.newProject()
@@ -612,15 +514,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # enable base group removal
 
-    def enableBaseGroupRemoval(self):
+    def baseGroupEnableRemoval(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblBaseGroups.selectedItems()) > 0:
             self.pbRemoveBaseGroup.setEnabled(True)
         else:
@@ -629,15 +527,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add base groups
 
-    def addBaseGroup(self):
+    def baseGroupAdd(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         idx = self.cbProjectGroups.currentIndex()
         grp = self.projectGroups[idx]
         tblIdx = len(self.baseGroups)
@@ -651,58 +545,46 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             self.tblBaseGroups.setItem(tblIdx,0,item)
             # add to list
             self.baseGroups.append(grp)
-        self.enableSettingsEdit()
+        self.settingsEnableEdit()
         
     #
     # remove base groups
 
-    def removeBaseGroup(self):
+    def baseGroupRemove(self):
 
-        if self.settingsDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
 
         txt = self.tblBaseGroups.currentItem().text()
         self.tblBaseGroups.removeRow(self.tblBaseGroups.currentRow())
         self.baseGroups.remove(txt)
-        self.enableSettingsEdit()
+        self.settingsEnableEdit()
 
     #
     # udpate boundary
 
-    def updateBoundary(self):
+    def boundaryLayerUpdate(self):
 
         if self.settingsState <> 'load':
-            if self.settingsDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
+            #
             if self.cbBoundaryLayer.count() > 0:
                 idx = self.cbBoundaryLayer.currentIndex()
                 if idx < 0:
                     idx = 0
                 self.boundaryLayer = self.projectLayers[idx]
-                self.enableSettingsEdit()
+                self.settingsEnableEdit()
 
     #
     # enable reference layer
 
-    def setReferenceStatus(self):
+    def referenceLayerSetStatus(self):
 
         if self.settingsState <> 'load':
-            if self.settingsDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
+            #
             if self.cbEnableReference.currentIndex() == 0:
                 self.cbReferenceLayer.setDisabled(True)
                 self.enableReference = False
@@ -712,176 +594,145 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                 self.enableReference = True
                 self.cbReferenceLayer.setCurrentIndex(0)
                 self.referenceLayer = self.projectLayers[0]
-            self.enableSettingsEdit()
+            self.settingsEnableEdit()
 
     #
     # update reference
 
-    def updateReference(self):
+    def referenceLayerUpdate(self):
 
         if self.settingsState <> 'load':
-            if self.settingsDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
+            #
             if self.enableReference == True and self.cbReferenceLayer.count() > 0:
                 idx = self.cbReferenceLayer.currentIndex()
                 if idx < 0:
                     idx = 0
                 self.referenceLayer = self.projectLayers[idx]
-                self.enableSettingsEdit()
+                self.settingsEnableEdit()
 
+
+    ########################################################
+    #                   export functions                   #
+    ########################################################
+    
     #
     # export project descriptive files in all formats
 
-    def exportProjectFiles(self,pData,hDir,jDir,kDir):
+    def exportProjectFiles(self,pData,exportFormat,exDir):
 
-        # heritage first
-        # heritage users file
-        pofH = os.path.join(hDir,pData[0][0]+'_users.ini')
-        f = open(pofH,'w')
-        f.write('[user]\n')
-        f.write('username=%s\n' % self.heritageUser)
-        f.write('password=passwordhidden\n')
-        f.close()
-        # heritage project file
-        pfH = os.path.join(hDir,pData[0][0]+'.ini')
-        f = open(pfH,'w')
-        f.write('owner=%s\n' % self.heritageUser)
-        f.write('code=%s\n' % pData[0][0])
-        f.write('description=%s\n' % pData[0][1])
-        f.write('note=%s\n' % pData[0][2])
-        f.write('tags=%s\n' % pData[0][3])
-        f.write('citations=%s\n' % pData[0][4])
-        f.write('default_codes=%s\n' % str(pData[0][5].split('\n')).replace("u'","'"))
-        f.write('default_time_periods=%s\n' % str(pData[0][6].split('\n')).replace("u'","'"))
-        f.write('default_annual_variation=%s\n' % str(pData[0][7].split('\n')).replace("u'","'"))
-        f.write('date_modified=%s\n' % pData[0][8])
-        f.close()
-        # json second
-        # json users file
-        pofJ= os.path.join(jDir,pData[0][0]+'_users.json')
-        f = open(pofJ,'w')
-        f.write('{"users":[{\n')
-        f.write('    "%s":[{\n' % self.heritageUser)
-        f.write('        "password":"passwordhidden"\n')
-        f.write('    }]\n}]}\n')
-        f.close()
-        # json project file
-        pfJ = os.path.join(jDir,pData[0][0]+'.json')
-        f = open(pfJ,'w')
-        f.write('{"attributes":[{\n')
-        f.write('    "owner":"%s",\n' % self.heritageUser)
-        f.write('    "code":"%s",\n' % pData[0][0])
-        f.write('    "description":"%s",\n' % pData[0][1])
-        f.write('    "note":"%s",\n' % pData[0][2])
-        f.write('    "tags":"%s",\n' % pData[0][3])
-        f.write('    "citations":"%s",\n' % pData[0][4])
-        f.write('    "default_codes":"%s",\n' % str(pData[0][5].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
-        f.write('    "default_time_periods":"%s",\n' % str(pData[0][6].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
-        f.write('    "default_annual_variation":"%s",\n' % str(pData[0][7].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
-        f.write('    "date_modified":"%s"\n' % pData[0][8])
-        f.write('}]}\n')
-        f.close()
-        # kml third
-        # kml users file
-        pofK= os.path.join(kDir,pData[0][0]+'_users.xml')
-        f = open(pofK,'w')
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<users>\n')
-        f.write('    <user>\n')
-        f.write('        <name>%s</name>\n' % self.heritageUser)
-        f.write('        <password>passwordhidden</password>\n')
-        f.write('    </user>\n')
-        f.write('</users>\n')
-        f.close()
-        # kml project file
-        pfK = os.path.join(kDir,pData[0][0]+'.xml')
-        f = open(pfK,'w')
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<attributes>\n')
-        f.write('    <owner>%s</owner>\n' % self.heritageUser)
-        f.write('    <code>%s</code>\n' % pData[0][0])
-        f.write('    <description>%s</description>\n' % pData[0][1])
-        f.write('    <note>%s</note>\n' % pData[0][2])
-        f.write('    <tags>%s</tags>\n' % pData[0][3])
-        f.write('    <citations>%s</citations>\n' % pData[0][4])
-        f.write('    <default_codes>%s</default_codes>\n' % str(pData[0][5].split('\n')).replace("u'","'"))
-        f.write('    <default_time_periods>%s</default_time_periods>\n' % str(pData[0][6].split('\n')).replace("u'","'"))
-        f.write('    <default_annual_variation>%s</default_annual_variation>\n' % str(pData[0][7].split('\n')).replace("u'","'"))
-        f.write('    <date_modified>%s</date_modified>\n' % pData[0][8])
-        f.write('</attributes>\n')
-        f.close()
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        if exportFormat == 'heritage1':
+            # heritage first
+            # heritage users file
+            pofH = os.path.join(exDir,pData[0][0]+'_users.ini')
+            f = open(pofH,'w')
+            f.write('[user]\n')
+            f.write('username=%s\n' % self.heritageUser)
+            f.write('password=passwordhidden\n')
+            f.close()
+            # heritage project file
+            pfH = os.path.join(exDir,pData[0][0]+'.ini')
+            f = open(pfH,'w')
+            f.write('owner=%s\n' % self.heritageUser)
+            f.write('code=%s\n' % pData[0][0])
+            f.write('description=%s\n' % pData[0][1])
+            f.write('note=%s\n' % pData[0][2])
+            f.write('tags=%s\n' % pData[0][3])
+            f.write('default_codes=%s\n' % str(pData[0][4].split('\n')).replace("u'","'"))
+            f.write('default_time_periods=%s\n' % str(pData[0][4].split('\n')).replace("u'","'"))
+            f.write('default_annual_variation=%s\n' % str(pData[0][6].split('\n')).replace("u'","'"))
+            f.write('date_modified=%s\n' % pData[0][7])
+            f.close()
+        else:
+            # json second
+            # json users file
+            pofJ= os.path.join(exDir,pData[0][0]+'_users.json')
+            f = open(pofJ,'w')
+            f.write('{"users":[{\n')
+            f.write('    "%s":[{\n' % self.heritageUser)
+            f.write('        "password":"passwordhidden"\n')
+            f.write('    }]\n}]}\n')
+            f.close()
+            # json project file
+            pfJ = os.path.join(exDir,pData[0][0]+'.json')
+            f = open(pfJ,'w')
+            f.write('{"attributes":[{\n')
+            f.write('    "owner":"%s",\n' % self.heritageUser)
+            f.write('    "code":"%s",\n' % pData[0][0])
+            f.write('    "description":"%s",\n' % pData[0][1])
+            f.write('    "note":"%s",\n' % pData[0][2])
+            f.write('    "tags":"%s",\n' % pData[0][3])
+            f.write('    "default_codes":"%s",\n' % str(pData[0][4].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
+            f.write('    "default_time_periods":"%s",\n' % str(pData[0][5].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
+            f.write('    "default_annual_variation":"%s",\n' % str(pData[0][6].split('\n')).replace('[','{').replace(']','}').replace("u'","'"))
+            f.write('    "date_modified":"%s"\n' % pData[0][7])
+            f.write('}]}\n')
+            f.close()
+
+    #
+    # time string to seconds
+
+    def timeString2seconds(self, timeString):
+        ftr = [3600,60,1]
+        seconds = sum([a*b for a,b in zip(ftr, map(int,timeString.split(':')))])
+        return(seconds)
 
     #
     # export interview in heritage format
 
-    def exportHeritageInterview(self,intvData,docOData,partData,outDir):
+    def exportInterviewHeritage1(self,exportFormat,intvData,partData,outDir):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # users first
-        contribList = docOData[0][1]
-        ofName = os.path.join(outDir,intvData[2]+'_users.ini')
-        f = open(ofName,'w')
-        f.write('[user]\n')
-        f.write('username=%s\n' % docOData[0][1])
-        f.write('account_security=INACTIVE\n')
-        f.write('active=false\n')
-        f.write('password=passwordhidden\n')
-        f.write('first_name=%s\n' % docOData[0][2])
-        f.write('last_name=%s\n' % docOData[0][3])
-        f.write('email=%s\n' % docOData[0][4])
-        f.write('community_affiliation=%s\n' % docOData[0][5])
-        f.write('family_group=%s\n' % docOData[0][6])
-        f.write('maiden_name=%s\n' % docOData[0][7])
-        f.write('gender=%s\n' % docOData[0][8])
-        f.write('marital_status=%s\n' % docOData[0][9])
-        f.write('birth_date=%s\n' % docOData[0][10])
-        f.write('tags=%s\n' % docOData[0][11])
-        f.write('note=%s\n' % docOData[0][12])
-        f.write('\n')
-        for participant in partData:
-            contribList += ','+participant[1]
-            f.write('[user]\n')
-            f.write('username=%s\n' % participant[1])
-            f.write('account_security=INACTIVE\n')
-            f.write('active=false\n')
-            f.write('password=passwordhidden\n')
-            f.write('first_name=%s\n' % participant[2])
-            f.write('last_name=%s\n' % participant[3])
-            f.write('email=%s\n' % participant[4])
-            f.write('community_affiliation=%s\n' % participant[5])
-            f.write('family_group=%s\n' % participant[6])
-            f.write('maiden_name=%s\n' % participant[7])
-            f.write('gender=%s\n' % participant[8])
-            f.write('marital_status=%s\n' % participant[9])
-            f.write('birth_date=%s\n' % participant[10])
-            f.write('tags=%s\n' % participant[11])
-            f.write('note=%s\n' % participant[12])
-            f.write('\n')
-        f.close()
+        contribList = ''
+        if exportFormat <> 'heritage1':
+            for participant in partData:
+                contribList += participant[1]+','
+                f.write('[user]\n')
+                f.write('username=%s\n' % participant[1])
+                f.write('account_security=INACTIVE\n')
+                f.write('active=false\n')
+                f.write('password=passwordhidden\n')
+                f.write('first_name=%s\n' % participant[2])
+                f.write('last_name=%s\n' % participant[3])
+                f.write('email=%s\n' % participant[4])
+                f.write('community_affiliation=%s\n' % participant[5])
+                f.write('family_group=%s\n' % participant[6])
+                f.write('maiden_name=%s\n' % participant[7])
+                f.write('gender=%s\n' % participant[8])
+                f.write('marital_status=%s\n' % participant[9])
+                f.write('birth_date=%s\n' % participant[10])
+                f.write('tags=%s\n' % participant[11])
+                f.write('note=%s\n' % participant[12])
+                f.write('\n')
+            f.close()
+            contribList = contribList[:-1]
         # interview file header
         ofName = os.path.join(outDir,intvData[2]+'.ini')
         f = open(ofName,'w')
-        f.write('owner=%s\n' % docOData[0][1])
-        f.write('code=%s\n' % intvData[2])
-        f.write('description=%s\n' % intvData[5])
-        f.write('start_date=%s\n' % intvData[3])
-        f.write('end_date=%s\n' % intvData[4])
-        f.write('location=%s\n' % intvData[6])
-        f.write('note=%s\n' % intvData[7])
-        f.write('tags=%s\n' % intvData[8])
-        f.write('security_code=%s\n' % intvData[10])
-        f.write('date_modified=%s\n' % intvData[12])
-        f.write('contributors=%s\n' % contribList)
-        f.write('\n')
+        if exportFormat <> 'heritage1':
+            f.write('owner=%s\n' % intvData[0][11])
+            f.write('code=%s\n' % intvData[2])
+            f.write('description=%s\n' % intvData[5])
+            f.write('start_date=%s\n' % intvData[3])
+            f.write('end_date=%s\n' % intvData[4])
+            f.write('location=%s\n' % intvData[6])
+            f.write('note=%s\n' % intvData[7])
+            f.write('tags=%s\n' % intvData[8])
+            f.write('security_code=%s\n' % intvData[10])
+            f.write('date_modified=%s\n' % intvData[12])
+            f.write('contributors=%s\n' % contribList)
+            f.write('\n')
         # get sections
         sql = "SELECT sequence_number, section_code, section_text, note, "
-        sql += "use_period, use_period_start, use_period_end, annual_variation, "
-        sql += "annual_variation_months, spatial_data_source, spatial_data_scale, "
-        sql += "geom_source, tags, media_start_time, media_end_time, "
+        sql += "date_time, date_time_start, date_time_end, time_of_year, "
+        sql += "time_of_year_months, spatial_data_source, spatial_data_scale, "
+        sql += "geom_source, content_codes || ',' || tags as tags, media_start_time, media_end_time, "
         sql += "data_security, date_created, date_modified, media_files, id "
         sql += "FROM interview_sections WHERE interview_id = %d " % intvData[0]
         sql += "ORDER by sequence_number;"
@@ -893,22 +744,54 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         for section in secData:
             f.write('[section=%s]\n' % section[1])
             f.write('sequence_number=%s\n' % section[0])
-            f.write('section_text=%s\n' % section[2])
-            f.write('note=%s\n' % section[3])
-            f.write('use_period=%s\n' % section[4])
-            f.write('use_period_start=%s\n' % section[5])
-            f.write('use_period_end=%s\n' % section[6])
-            f.write('annual_variation=%s\n' % section[7])
-            f.write('annual_variation_months=%s\n' % section[8])
-            f.write('spatial_data_source=%s\n' % section[9])
-            f.write('spatial_data_scale=%s\n' % section[10])
-            f.write('geom_source=%s\n' % section[11])
+            if section[2] == None:
+                f.write('section_text=\n')
+            else:
+                f.write('section_text=%s\n' % section[2])
+            if section[3] == None:
+                f.write('note=\n')
+            else:
+                f.write('note=%s\n' % section[3])
+            if section[4] in ['R','U','N','SP']:
+                f.write('use_period=%s\n' % section[4])
+            else:
+                f.write('use_period=P\n')
+                upS, upE = section[4].split(':')
+                f.write('use_period_start=%s\n' % upS.strip())
+                f.write('use_period_end=%s\n' % upE.strip())
+            if section[7] in ['R','U','N']:
+                f.write('annual_variation=%s\n' % section[7])
+            else:
+                f.write('annual_variation=SE\n')
+                f.write('annual_variation_months=%s\n' % section[7])
+            f.write('spatial_source=%s\n' % section[9])
+            f.write('spatial_scale=%s\n' % section[10])
+            if not section[11] in ['ns','pt','ln','pl']:
+                f.write('refers_to=%s\n' % section[11])
             f.write('tags=%s\n' % section[12])
-            f.write('media_start_time=%s\n' % section[13])
-            f.write('media_end_time=%s\n' % section[14])
-            f.write('data_security=%s\n' % section[15])
+            #f.write('audio_start=%s\n' % str(self.timeString2seconds(section[13])))
+            #f.write('audio_end=%s\n' % str(self.timeString2seconds(section[14])))
+            f.write('audio_start=%s\n' % section[13][3:])
+            f.write('audio_end=%s\n' % section[14][3:])
+            f.write('security_code=%s\n' % section[15])
             f.write('date_created=%s\n' % section[16])
             f.write('date_modified=%s\n' % section[17])
+            if not section[18] is None and section[18] <> '':
+                cmFiles = section[18].split('|||')
+                if len(cmFiles) > 0:
+                    if cmFiles[0] == '':
+                        cmFiles = cmFiles[1:]
+                    imgIdx = 1
+                    for item in cmFiles:
+                        if '||' in item:
+                            sFileName,caption = item.split('||')
+                            if os.path.exists(sFileName):
+                                path, sFile = os.path.split(sFileName)
+                                dFileName = os.path.join(outDir,'images',sFile)
+                                shutil.copy(sFileName,dFileName)
+                                f.write('image%d=%s\n' % (imgIdx,sFile))
+                                f.write('image%dcaption=%s\n' % (imgIdx,caption))
+                                imgIdx += 1
             f.write('\n')
             if section[11] == 'pt':
                 sql = "SELECT section_code, AsKml(geom) "
@@ -918,10 +801,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_points.kml')
                 if firstPoint:
-                    self.writeKMLFile(ofn,featData,intvData[2])
+                    self.kmlFileWrite(ofn,featData,intvData[2])
                     firstPoint = False
                 else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
+                    self.kmlFileWrite(ofn,featData,intvData[2],True)
             elif section[11] == 'ln':
                 sql = "SELECT section_code, AsKml(geom) "
                 sql += "FROM lines WHERE interview_id = %d AND " % intvData[0]
@@ -930,10 +813,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_lines.kml')
                 if firstLine:
-                    self.writeKMLFile(ofn,featData,intvData[2])
+                    self.kmlFileWrite(ofn,featData,intvData[2])
                     firstLine = False
                 else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
+                    self.kmlFileWrite(ofn,featData,intvData[2],True)
             elif section[11] == 'pl':
                 sql = "SELECT section_code, AsKml(geom) "
                 sql += "FROM polygons WHERE interview_id = %d AND " % intvData[0]
@@ -942,41 +825,27 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_polygons.kml')
                 if firstPolygon:
-                    self.writeKMLFile(ofn,featData,intvData[2])
+                    self.kmlFileWrite(ofn,featData,intvData[2])
                     firstPolygon = False
                 else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
+                    self.kmlFileWrite(ofn,featData,intvData[2],True)
         f.close()
 
     #
     # export interview in json format
 
-    def exportJSONInterview(self,intvData,docOData,partData,outDir):
+    def exportInterviewJSON(self,intvData,partData,outDir):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # users first
-        contribList = docOData[0][1]
+        contribList = ''
         ofName = os.path.join(outDir,intvData[2]+'_users.json')
         f = open(ofName,'w')
         f.write('{"users":[{\n')
-        f.write('    "%s":[{\n' % docOData[0][1])
-        f.write('        "account_security":"INACTIVE",\n')
-        f.write('        "active":"false",\n')
-        f.write('        "password":"passwordhidden",\n')
-        f.write('        "first_name":"%s",\n' % docOData[0][2])
-        f.write('        "last_name":"%s",\n' % docOData[0][3])
-        f.write('        "email":"%s",\n' % docOData[0][4])
-        f.write('        "community_affiliation":"%s",\n' % docOData[0][5])
-        f.write('        "family_group":"%s",\n' % docOData[0][6])
-        f.write('        "maiden_name":"%s",\n' % docOData[0][7])
-        f.write('        "gender":"%s",\n' % docOData[0][8])
-        f.write('        "marital_status":"%s",\n' % docOData[0][9])
-        f.write('        "birth_date":"%s",\n' % docOData[0][10])
-        f.write('        "tags":"%s",\n' % docOData[0][11])
-        f.write('        "note":"%s"\n' % docOData[0][12])
-        f.write('    }]\n')
         for participant in partData:
             f.write(',')
-            contribList += ','+participant[1]
+            contribList += participant[1]+','
             f.write('    "%s":[{\n' % participant[1])
             f.write('        "account_security":"INACTIVE",\n')
             f.write('        "active":"false",\n')
@@ -995,11 +864,12 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             f.write('    }]\n')
         f.write('}]}\n')
         f.close()
+        contribList = contribList[:-1]
         # interview file header
         ofName = os.path.join(outDir,intvData[2]+'.json')
         f = open(ofName,'w')
         f.write('{"attributes":[{\n')
-        f.write('    "owner":"%s",\n' % docOData[0][1])
+        f.write('    "interviewer":"%s",\n' % intvData[11])
         f.write('    "code":"%s",\n' % intvData[2])
         f.write('    "description":"%s",\n' % intvData[5])
         f.write('    "start_date":"%s",\n' % intvData[3])
@@ -1013,10 +883,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         f.write('    "sections":[{\n')
         # get sections
         sql = "SELECT sequence_number, section_code, section_text, note, "
-        sql += "use_period, use_period_start, use_period_end, annual_variation, "
-        sql += "annual_variation_months, spatial_data_source, spatial_data_scale, "
-        sql += "geom_source, tags, media_start_time, media_end_time, "
-        sql += "data_security, date_created, date_modified, media_files, id "
+        sql += "date_time, date_time_start, date_time_end, time_of_year, "
+        sql += "time_of_year_months, spatial_data_source, spatial_data_scale, "
+        sql += "geom_source, content_codes || ',' || tags as tags, media_start_time, media_end_time, "
+        sql += "data_security, date_created, date_modified, media_files, id, "
+        sql += "content_codes, tags as othertags "
         sql += "FROM interview_sections WHERE interview_id = %d " % intvData[0]
         sql += "ORDER by sequence_number;"
         rs = self.cur.execute(sql)
@@ -1034,11 +905,8 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             f.write('        "sequence_number":"%s",\n' % section[0])
             f.write('        "section_text":"%s",\n' % section[2])
             f.write('        "note":"%s",\n' % section[3])
-            f.write('        "use_period":"%s",\n' % section[4])
-            f.write('        "use_period_start":"%s",\n' % section[5])
-            f.write('        "use_period_end":"%s",\n' % section[6])
-            f.write('        "annual_variation":"%s",\n' % section[7])
-            f.write('        "annual_variation_months":"%s",\n' % section[8])
+            f.write('        "date_time":"%s",\n' % section[4])
+            f.write('        "time_of_year":"%s",\n' % section[7])
             f.write('        "spatial_data_source":"%s",\n' % section[9])
             f.write('        "spatial_data_scale":"%s",\n' % section[10])
             f.write('        "geom_source":"%s",\n' % section[11])
@@ -1050,189 +918,54 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             f.write('        "date_modified":"%s"\n' % section[17])
             f.write('    }]\n')
             if section[11] == 'pt':
-                sql = "SELECT section_code, AsGeoJSON(geom) "
+                sql = "SELECT section_code, AsGeoJSON(Transform(geom,4326)) "
                 sql += "FROM points WHERE interview_id = %d AND " % intvData[0]
                 sql += "section_id = %d " % section[19]
                 rs = self.cur.execute(sql)
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_points.geojson')
                 if firstPoint:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2])
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section)
                     firstPoint = False
                 else:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2],True)
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section,True)
             elif section[11] == 'ln':
-                sql = "SELECT section_code, AsGeoJSON(geom) "
+                sql = "SELECT section_code, AsGeoJSON(Transform(geom,4326)) "
                 sql += "FROM lines WHERE interview_id = %d AND " % intvData[0]
                 sql += "section_id = %d " % section[19]
                 rs = self.cur.execute(sql)
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_lines.geojson')
                 if firstLine:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2])
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section)
                     firstLine = False
                 else:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2],True)
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section,True)
             elif section[11] == 'pl':
-                sql = "SELECT section_code, AsGeoJSON(geom) "
+                sql = "SELECT section_code, AsGeoJSON(Transform(geom,4326)) "
                 sql += "FROM polygons WHERE interview_id = %d AND " % intvData[0]
                 sql += "section_id = %d " % section[19]
                 rs = self.cur.execute(sql)
                 featData = rs.fetchall()[0]
                 ofn = os.path.join(outDir,intvData[2]+'_polygons.geojson')
                 if firstPolygon:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2])
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section)
                     firstPolygon = False
                 else:
-                    self.writeGeoJSONFile(ofn,featData,intvData[2],True)
+                    self.geojsonFileWrite(ofn,featData,intvData[2],section,True)
         f.write('    }]\n}]}\n')
         f.close()
+        
 
-    #
-    # export interview in kml/xml format
-
-    def exportKMLInterview(self,intvData,docOData,partData,outDir):
-
-        # users first
-        contribList = docOData[0][1]
-        ofName = os.path.join(outDir,intvData[2]+'_users.xml')
-        f = open(ofName,'w')
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<users>\n')
-        f.write('    <user>\n')
-        f.write('        <name>%s</name>\n' % docOData[0][1])
-        f.write('        <account_security>INACTIVE</account_security>\n')
-        f.write('        <active>false</active>\n')
-        f.write('        <password>passwordhidden</password>\n')
-        f.write('        <first_name>%s</first_name>\n' % docOData[0][2])
-        f.write('        <last_name>%s</last_name>\n' % docOData[0][3])
-        f.write('        <email>%s</email>\n' % docOData[0][4])
-        f.write('        <community_affiliation>%s</community_affiliation>\n' % docOData[0][5])
-        f.write('        <family_group>%s</family_group>\n' % docOData[0][6])
-        f.write('        <maiden_name>%s</maiden_name>\n' % docOData[0][7])
-        f.write('        <gender>%s</gender>\n' % docOData[0][8])
-        f.write('        <marital_status>%s</marital_status>\n' % docOData[0][9])
-        f.write('        <birth_date>%s</birth_date>\n' % docOData[0][10])
-        f.write('        <tags>%s</tags>\n' % docOData[0][11])
-        f.write('        <note>%s</note>\n' % docOData[0][12])
-        f.write('   </user>\n')
-        for participant in partData:
-            contribList += ','+participant[1]
-            f.write('    <user>\n')
-            f.write('        <name>%s</name>\n' % participant[1])
-            f.write('        <account_security>INACTIVE</account_security>\n')
-            f.write('        <active>false</active>\n')
-            f.write('        <password>passwordhidden</password>\n')
-            f.write('        <first_name>%s</first_name>\n' % participant[2])
-            f.write('        <last_name>%s</last_name>\n' % participant[3])
-            f.write('        <email>%s</email>\n' % participant[4])
-            f.write('        <community_affiliation>%s</community_affiliation>\n' % participant[5])
-            f.write('        <family_group>%s</family_group>\n' % participant[6])
-            f.write('        <maiden_name>%s</maiden_name>\n' % participant[7])
-            f.write('        <gender>%s</gender>\n' % participant[8])
-            f.write('        <marital_status>%s</marital_status>\n' % participant[9])
-            f.write('        <birth_date>%s</birth_date>\n' % participant[10])
-            f.write('        <tags>%s</tags>\n' % participant[11])
-            f.write('        <note>%s</note>\n' % participant[12])
-            f.write('   </user>\n')
-        f.write('</users>\n')
-        f.close()
-        # interview file header
-        ofName = os.path.join(outDir,intvData[2]+'.xml')
-        f = open(ofName,'w')
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<attributes>\n')
-        f.write('    <owner>%s</owner>\n' % docOData[0][1])
-        f.write('    <code>%s</code>\n' % intvData[2])
-        f.write('    <description>%s</description>\n' % intvData[5])
-        f.write('    <start_date>%s</start_date>\n' % intvData[3])
-        f.write('    <end_date>%s</end_date>\n' % intvData[4])
-        f.write('    <location>%s</location>\n' % intvData[6])
-        f.write('    <note>%s</note>\n' % intvData[7])
-        f.write('    <tags>%s</tags>\n' % intvData[8])
-        f.write('    <security_code>%s</security_code>\n' % intvData[10])
-        f.write('    <date_modified>%s</date_modified>\n' % intvData[12])
-        f.write('    <contributors>%s</contributors>\n' % contribList)
-        f.write('    <sections>\n')
-        # get sections
-        sql = "SELECT sequence_number, section_code, section_text, note, "
-        sql += "use_period, use_period_start, use_period_end, annual_variation, "
-        sql += "annual_variation_months, spatial_data_source, spatial_data_scale, "
-        sql += "geom_source, tags, media_start_time, media_end_time, "
-        sql += "data_security, date_created, date_modified, media_files, id "
-        sql += "FROM interview_sections WHERE interview_id = %d " % intvData[0]
-        sql += "ORDER by sequence_number;"
-        rs = self.cur.execute(sql)
-        secData = rs.fetchall()
-        firstPoint = True
-        firstLine = True
-        firstPolygon = True
-        for section in secData:
-            f.write('        <section>\n')
-            f.write('            <section_code>%s</section_code>\n' % section[1])
-            f.write('            <sequence_number>%s</sequence_number>\n' % section[0])
-            f.write('            <section_text>%s</section_text>\n' % section[2])
-            f.write('            <note>%s</note>\n' % section[3])
-            f.write('            <use_period>%s</use_period>\n' % section[4])
-            f.write('            <use_period_start>%s</use_period_start>\n' % section[5])
-            f.write('            <use_period_end>%s</use_period_end>\n' % section[6])
-            f.write('            <annual_variation>%s</annual_variation>\n' % section[7])
-            f.write('            <annual_variation_months>%s</annual_variation_months>\n' % section[8])
-            f.write('            <spatial_data_source>%s</spatial_data_source>\n' % section[9])
-            f.write('            <spatial_data_scale>%s</spatial_data_scale>\n' % section[10])
-            f.write('            <geom_source>%s</geom_source>\n' % section[11])
-            f.write('            <tags>%s</tags>\n' % section[12])
-            f.write('            <media_start_time>%s</media_start_time>\n' % section[13])
-            f.write('            <media_end_time>%s</media_end_time>\n' % section[14])
-            f.write('            <data_security>%s</data_security>\n' % section[15])
-            f.write('            <date_created>%s</date_created>\n' % section[16])
-            f.write('            <date_modified>%s</date_modified>\n' % section[17])
-            f.write('        </section>\n')
-            if section[11] == 'pt':
-                sql = "SELECT section_code, AsKml(geom) "
-                sql += "FROM points WHERE interview_id = %d AND " % intvData[0]
-                sql += "section_id = %d " % section[19]
-                rs = self.cur.execute(sql)
-                featData = rs.fetchall()[0]
-                ofn = os.path.join(outDir,intvData[2]+'_points.geojson')
-                if firstPoint:
-                    self.writeKMLFile(ofn,featData,intvData[2])
-                    firstPoint = False
-                else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
-            elif section[11] == 'ln':
-                sql = "SELECT section_code, AsKml(geom) "
-                sql += "FROM lines WHERE interview_id = %d AND " % intvData[0]
-                sql += "section_id = %d " % section[19]
-                rs = self.cur.execute(sql)
-                featData = rs.fetchall()[0]
-                ofn = os.path.join(outDir,intvData[2]+'_lines.geojson')
-                if firstLine:
-                    self.writeKMLFile(ofn,featData,intvData[2])
-                    firstLine = False
-                else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
-            elif section[11] == 'pl':
-                sql = "SELECT section_code, AsKml(geom) "
-                sql += "FROM polygons WHERE interview_id = %d AND " % intvData[0]
-                sql += "section_id = %d " % section[19]
-                rs = self.cur.execute(sql)
-                featData = rs.fetchall()[0]
-                ofn = os.path.join(outDir,intvData[2]+'_polygons.geojson')
-                if firstPolygon:
-                    self.writeKMLFile(ofn,featData,intvData[2])
-                    firstPolygon = False
-                else:
-                    self.writeKMLFile(ofn,featData,intvData[2],True)
-        f.write('    </sections>\n')
-        f.write('</attributes>\n')
-        f.close()
         
     #
     # write kml file
 
-    def writeKMLFile(self,outFName,recordInfo,intvCode,append=False):
+    def kmlFileWrite(self,outFName,recordInfo,intvCode,append=False):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if append:
             rf = open(outFName,'r')
             lns = rf.readlines()
@@ -1261,8 +994,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # write geojson file
 
-    def writeGeoJSONFile(self,outFName,recordInfo,intvCode,append=False):
+    def geojsonFileWrite(self,outFName,recordInfo,intvCode,sData,append=False):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if append:
             rf = open(outFName,'r')
             lns = rf.readlines()
@@ -1280,7 +1016,14 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             f.write('    "features":[\n')
         f.write('        {"type":"Feature",\n')
         f.write('            "properties":{\n')
-        f.write('                "section_code":"%s",\n' % recordInfo[0])
+        f.write('                "s_code":"%s",\n' % recordInfo[0])
+        f.write('                "s_dt_tm":"%s",\n' % sData[4])
+        f.write('                "s_tm_yr":"%s",\n' % sData[7])
+        f.write('                "sptl_src":"%s",\n' % sData[9])
+        f.write('                "sptl_scal":"%s",\n' % sData[10])       
+        f.write('                "s_text":"%s",\n' % sData[2])
+        f.write('                "s_ct_cds":"%s",\n' % sData[20])
+        f.write('                "s_tags":"%s",\n' % sData[21])
         f.write('                "source":"Feature from %s"},\n' % intvCode)
         f.write('            "geometry":%s\n' % recordInfo[1])
         f.write('        }\n')
@@ -1289,25 +1032,32 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         f.close()
 
     #
-    # export interviews to LOUIS Archive format
+    # export interviews to GeoJSON Archive format
 
-    def exportInterviews(self):
+    def exportGeoJSON(self):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # disable interface
+        self.pbDialogClose.setDisabled(True)
+        self.twMapBioSettings.tabBar().setDisabled(True)
+        #
         # get project information
         sql = "SELECT code,description,note,tags, "
-        sql += "citations,default_codes,default_time_periods, "
-        sql += "default_annual_variation,date_modified FROM project"
+        sql += "default_codes,dates_and_times, "
+        sql += "times_of_year,date_modified FROM project"
         rs = self.cur.execute(sql)
         pData = rs.fetchall()
         pCode = pData[0][0]
         # get list of interviews
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
-        sql += "data_security, owner_id, date_modified FROM interviews"
+        sql += "data_security, interviewer, date_modified FROM interviews "
+        sql += "WHERE data_status == 'RC'"
         rs = self.cur.execute(sql)
         intvList = rs.fetchall()
         intCnt = len(intvList)
-        progress = QtGui.QProgressDialog('Exporting Interviews for %s' % pCode,'Cancel',0,intCnt, self)
+        progress = QtGui.QProgressDialog('Creating GeoJSON Archives for %s' % pCode,'Cancel',0,intCnt, self)
         progress.setWindowTitle('Export progress')
         progress.setWindowModality(QtCore.Qt.WindowModal)
         # create directory structure
@@ -1318,17 +1068,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         if not os.path.exists(self.exProjDir):
             os.makedirs(self.exProjDir,0755)
         # create internal structure for different archive types
-        hDir = os.path.join(self.exProjDir,'heritage')
-        if not os.path.exists(hDir):
-            os.makedirs(hDir,0755)
-        jDir = os.path.join(self.exProjDir,'json')
-        if not os.path.exists(jDir):
-            os.makedirs(jDir,0755)
-        kDir = os.path.join(self.exProjDir,'kml')
-        if not os.path.exists(kDir):
-            os.makedirs(kDir,0755)
+        exDir = os.path.join(self.exProjDir,'geojson')
+        if not os.path.exists(exDir):
+            os.makedirs(exDir,0755)
         # write project files
-        self.exportProjectFiles(pData,hDir,jDir,kDir)
+        self.exportProjectFiles(pData,'geojson',exDir)
         x = 0
         for intvData in intvList:
             x += 1
@@ -1338,28 +1082,12 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             # export data
             # heritage first
             # identify or create heritage output directory for this interview
-            intvHDir = os.path.join(hDir,'doc_'+intvData[2],'images')
-            if not os.path.exists(intvHDir):
-                os.makedirs(intvHDir, 0755)
-            intvHDir = os.path.join(hDir,'doc_'+intvData[2])
-            # identify or create json output directory for this interview
-            intvJDir = os.path.join(jDir,'doc_'+intvData[2],'images')
-            if not os.path.exists(intvJDir):
-                os.makedirs(intvJDir, 0755)
-            intvJDir = os.path.join(jDir,'doc_'+intvData[2])
-            # identify or create kml output directory for this interview
-            intvKDir = os.path.join(kDir,'doc_'+intvData[2],'images')
-            if not os.path.exists(intvKDir):
-                os.makedirs(intvKDir, 0755)
-            intvKDir = os.path.join(kDir,'doc_'+intvData[2])
-            # get document owner
-            sql = "SELECT id, user_name, first_name, last_name, email_address, "
-            sql += "community, family, maiden_name, gender, marital_status, "
-            sql += "birth_date, tags, note, date_modified "
-            sql += "FROM participants WHERE id = %d " % intvData[11]
-            rs = self.cur.execute(sql)
-            docOData = rs.fetchall()
-            sql = "SELECT a.id, a.user_name, a.first_name, a.last_name, a.email_address, "
+            intvExDir = os.path.join(exDir,'doc_'+intvData[2],'images')
+            if not os.path.exists(intvExDir):
+                os.makedirs(intvExDir, 0755)
+            intvExDir = os.path.join(exDir,'doc_'+intvData[2])
+            # get participants
+            sql = "SELECT a.id, a.participant_code, a.first_name, a.last_name, a.email_address, "
             sql += "b.community, b.family, a.maiden_name, a.gender, a.marital_status, "
             sql += "a.birth_date, a.tags, a.note, b.date_modified "
             sql += "FROM participants a, interviewees b "
@@ -1368,129 +1096,196 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             rs = self.cur.execute(sql)
             partData = rs.fetchall()
             # export interview
-            self.exportHeritageInterview(intvData,docOData,partData,intvHDir)
-            self.exportJSONInterview(intvData,docOData,partData,intvJDir)
-            self.exportKMLInterview(intvData,docOData,partData,intvKDir)
+            self.exportInterviewJSON(intvData,partData,intvExDir)
+            self.exportConvertGeoToShape(intvExDir)
             # process multimedia
             # check if audio file exists
             wfName = os.path.join(self.dirName,intvData[2]+'.wav')
-            mp3Name = os.path.join(self.dirName,intvData[2]+'.mp3')
+            mp3Name = os.path.join(intvExDir,intvData[2]+'.mp3')
             if os.path.exists(wfName):
-                self.createMp3(wfName,mp3Name)
-                hcopy = os.path.join(intvHDir,intvData[2]+'.mp3')
-                jcopy = os.path.join(intvJDir,intvData[2]+'.mp3')
-                kcopy = os.path.join(intvKDir,intvData[2]+'.mp3')
-                shutil.copy(mp3Name,hcopy)
-                shutil.copy(mp3Name,jcopy)
-                shutil.move(mp3Name,kcopy)
+                self.mp3Create(wfName,mp3Name)
+                #hcopy = os.path.join(intvExDir,intvData[2]+'.mp3')
+                #shutil.copy(mp3Name,hcopy)
+            # compress outputs into zip file
+            zipFName = intvData[2] + '.zip'
+            intZFileName = os.path.join(exDir,zipFName)
+            self.zipArchiveMake(intvExDir, intZFileName)
+            # remove original files
+            dirList = glob.glob(exDir+'/*')
+            self.removeFilesInList(dirList)
+        # enable interface
+        self.pbDialogClose.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
+
+    #
+    # export convert geojson files to shape files
+
+    def exportConvertGeoToShape(self,exPath):
+
+        fList = glob.glob(exPath+'/*.geojson')
+        for fName in fList:
+            inLyr = QgsVectorLayer(fName, 'src', 'ogr')
+            root, ext = os.path.splitext(fName)
+            ofName = root + '.shp'
+            outLyr = QgsVectorLayer(ofName,'dst', 'ogr')
+            srcDP = inLyr.dataProvider()
+            error = QgsVectorFileWriter.writeAsVectorFormat(inLyr, ofName, "System", None, "ESRI Shapefile")
+
+    #
+    # export interviews to LOUIS Heritage V2 Archive format
+
+    def exportHeritageV2(self):
+        pass 
+
+    #
+    # export interviews to LOUIS Heritage V1 Archive format
+
+    def exportHeritageV1(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # disable interface
+        self.pbDialogClose.setDisabled(True)
+        self.twMapBioSettings.tabBar().setDisabled(True)
+        # get project information
+        sql = "SELECT code,description,note,tags, "
+        sql += "content_codes,dates_and_times, "
+        sql += "times_of_year,date_modified FROM project"
+        rs = self.cur.execute(sql)
+        pData = rs.fetchall()
+        pCode = pData[0][0]
+        # get list of interviews
+        sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
+        sql += "description, interview_location, note, tags, data_status, "
+        sql += "data_security, interviewer, date_modified FROM interviews "
+        sql += "WHERE data_status == 'RC'"
+        rs = self.cur.execute(sql)
+        intvList = rs.fetchall()
+        intCnt = len(intvList)
+        progress = QtGui.QProgressDialog('Creating Heritage Archives for %s' % pCode,'Cancel',0,intCnt, self)
+        progress.setWindowTitle('Export progress')
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        # create directory structure
+        self.exDir = os.path.join(self.dirName,'exports')
+        if not os.path.exists(self.exDir):
+            os.makedirs(self.exDir,0755)
+        self.exProjDir = os.path.join(self.exDir,pCode)
+        if not os.path.exists(self.exProjDir):
+            os.makedirs(self.exProjDir,0755)
+        # create internal structure for different archive types
+        exDir = os.path.join(self.exProjDir,'heritage1')
+        if not os.path.exists(exDir):
+            os.makedirs(exDir,0755)
+        # write project files
+        self.exportProjectFiles(pData,'heritage1',exDir)
+        x = 0
+        for intvData in intvList:
+            x += 1
+            progress.setValue(x)
+            if progress.wasCanceled():
+                break
+            # export data
+            # heritage first
+            # identify or create heritage output directory for this interview
+            intvExDir = os.path.join(exDir,'doc_'+intvData[2],'images')
+            if not os.path.exists(intvExDir):
+                os.makedirs(intvExDir, 0755)
+            intvExDir = os.path.join(exDir,'doc_'+intvData[2])
+            # get participants
+            sql = "SELECT a.id, a.participant_code, a.first_name, a.last_name, a.email_address, "
+            sql += "b.community, b.family, a.maiden_name, a.gender, a.marital_status, "
+            sql += "a.birth_date, a.tags, a.note, b.date_modified "
+            sql += "FROM participants a, interviewees b "
+            sql += "WHERE a.id = b.participant_id AND "
+            sql += "b.interview_id = %d " % intvData[0]
+            rs = self.cur.execute(sql)
+            partData = rs.fetchall()
+            # export interview
+            self.exportInterviewHeritage1('heritage1',intvData,partData,intvExDir)
+            # process multimedia
+            # check if audio file exists
+            wfName = os.path.join(self.dirName,intvData[2]+'.wav')
+            mp3Name = os.path.join(intvExDir,intvData[2]+'.mp3')
+            if os.path.exists(wfName):
+                self.mp3Create(wfName,mp3Name)
+                #hcopy = os.path.join(,intvData[2]+'.mp3')
+                #shutil.copy(mp3Name,hcopy)
+            # compress outputs into zip file
+            zipFName = intvData[2] + '_part1.zip'
+            intZFileName = os.path.join(exDir,zipFName)
+            self.zipArchiveMake(intvExDir, intZFileName, excludeFileType='.kml')
+            zipFName = intvData[2] + '_part2.zip'
+            intZFileName = os.path.join(exDir,zipFName)
+            self.zipArchiveMake(intvExDir, intZFileName, includeFileType='.kml')
+            # remove original files
+            dirList = glob.glob(exDir+'/*')
+            self.removeFilesInList(dirList)
+        # enable interface
+        self.pbDialogClose.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
+
+    #
+    #
+
+    def removeFilesInList(self, dirList):
+        
+        for entry in dirList:
+            if os.path.isdir(entry):
+                nDirList = glob.glob(entry+'/*')
+                self.removeFilesInList(nDirList)
+                os.rmdir(entry)
+            else:
+                self.removeNonZipFile(entry)
+
+    #
+    # remove file
+
+    def removeNonZipFile(self, fName):
+
+        fRoot,fExt = os.path.splitext(fName)
+        if fExt <> '.zip':
+            os.remove(fName)
+    
+    #
+    # create zip archive
+    
+    def zipArchiveMake(self, srcPath, fName, excludeFileType=None, includeFileType=None):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        fzip = zipfile.ZipFile(fName, 'w', zipfile.ZIP_DEFLATED)
+        abs_src = os.path.abspath(srcPath)
+        for dirname, subdirs, files in os.walk(srcPath):
+            for filename in files:
+                if excludeFileType <> None:
+                    if os.path.splitext(filename)[1] <> excludeFileType:
+                        absname = os.path.abspath(os.path.join(dirname, filename))
+                        arcname = absname[len(abs_src) + 1:]
+                        fzip.write(absname, arcname)
+                elif includeFileType <> None:
+                    if os.path.splitext(filename)[1] == includeFileType:
+                        absname = os.path.abspath(os.path.join(dirname, filename))
+                        arcname = absname[len(abs_src) + 1:]
+                        fzip.write(absname, arcname)
+                else:
+                    absname = os.path.abspath(os.path.join(dirname, filename))
+                    arcname = absname[len(abs_src) + 1:]
+                    fzip.write(absname, arcname)
+        fzip.close()
 
     #
     # create mp3 audio file
 
-    def createMp3(self, srcFile, destFile):
+    def mp3Create(self, srcFile, destFile):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         src = AudioSegment.from_wav(srcFile)
         src.export(destFile, format='mp3', bitrate='44.1k')
     
-    #
-    # pull data from Heritage
-    
-    def pullData(self):
-        pass
-
-    #
-    # push data to Heritage
-
-    def pushData(self):
-        pass 
-
-
-    ########################################################
-    #               projects tab functions                 #
-    ########################################################
-
-    #
-    # enable project
-
-    def enableProject(self):
-
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
-        # main tabs
-        self.twProject.setEnabled(True)
-        self.twParticipants.setEnabled(True)
-        self.twInterviews.setEnabled(True)
-        self.pbExport.setEnabled(True)
-        
-    #
-    # disable project
-
-    def disableProject(self):
-
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
-        # main tabs
-        self.twProject.setDisabled(True)
-        self.twParticipants.setDisabled(True)
-        self.twInterviews.setDisabled(True)
-        self.pbExport.setDisabled(True)
-        
-    #
-    # enable project edit
-
-    def enableProjectEdit(self):
-
-        if self.projectState <> 'load' and self.pbDialogClose.isEnabled():
-            if self.projectDebug:
-                if self.debugFile == True:
-                    self.df.write(self.myself()+ '\n')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
-
-            # other tabs & main control
-            self.twSettings.setDisabled(True)
-            self.twParticipants.setDisabled(True)
-            self.twInterviews.setDisabled(True)
-            self.pbDialogClose.setDisabled(True)
-            # controls on this tab
-            self.pbProjectSave.setEnabled(True)
-            self.pbProjectCancel.setEnabled(True)
-            # dialog close
-            self.pbDialogClose.setDisabled(True)
-
-    #
-    # disable project edit
-
-    def disableProjectEdit(self):
-
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
-        # other tabs & main control
-        self.twSettings.setEnabled(True)
-        self.twParticipants.setEnabled(True)
-        self.twInterviews.setEnabled(True)
-        self.pbDialogClose.setEnabled(True)
-        # controls on this tab
-        self.pbProjectSave.setDisabled(True)
-        self.pbProjectCancel.setDisabled(True)
-        # dialog close
-        self.pbDialogClose.setEnabled(True)
 
         
     ########################################################
@@ -1500,15 +1295,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # create database
 
-    def createDB(self, dbName):
+    def dbCreate(self, dbName):
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # connect
         # note that this first act creates a blank file on the disk
         self.conn = sqlite.connect(dbName)
@@ -1517,22 +1307,17 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         sql = "SELECT InitSpatialMetadata()"
         self.cur.execute(sql)
         # create necessary tables
-        self.createLOUISHeritageTables()
+        self.dbCreateTables()
         # close
         self.conn.close()
 
     #
     # open database
 
-    def openDB(self):
+    def dbOpen(self):
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # connect
         self.conn = sqlite.connect(os.path.join(self.dirName,self.projectDB))
         self.cur = self.conn.cursor()
@@ -1540,7 +1325,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # close database
     
-    def closeDB(self):
+    def dbClose(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # disconnect
         self.cur = None
         self.conn.close()
@@ -1548,31 +1336,23 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read database
 
-    def readDB(self):
+    def dbRead(self):
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
-        self.readProjectTable()
-        self.readParticipantList()
-        self.readInterviewList()
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.projectTableRead()
+        self.participantListRead()
+        self.interviewListRead()
 
     #
     # create tables
 
-    def createLOUISHeritageTables(self):
+    def dbCreateTables(self):
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # create project table
         sql = "CREATE TABLE project ("
         sql += "id INTEGER NOT NULL PRIMARY KEY, "
@@ -1581,26 +1361,26 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         sql += "note TEXT, "
         sql += "tags TEXT, "
         sql += "data_status TEXT, "
-        sql += "citations TEXT, "
+        sql += "content_codes TEXT, "
         sql += "default_codes TEXT, "
-        sql += "default_time_periods TEXT,"
-        sql += "default_annual_variation TEXT, "
+        sql += "dates_and_times TEXT,"
+        sql += "times_of_year TEXT, "
         sql += "date_created TEXT, "
         sql += "date_modified TEXT)"
         self.cur.execute(sql)
         # insert a new record into the projects table
         modDate = datetime.datetime.now().isoformat()[:10]
         sql = "INSERT into project (id, code, description, note, tags, "
-        sql += "data_status, citations, default_codes, "
-        sql += "default_time_periods, date_created, date_modified) "
+        sql += "data_status, content_codes, "
+        sql += "dates_and_times, times_of_year, date_created, date_modified) "
         sql += "VALUES (%d, '%s', '%s', '%s', '%s', " % (1, 'NEW1', 'New Project', '', '')
-        sql += "'%s', '%s', '%s', " % ('N', '', '')
-        sql += "'%s', '%s', '%s');" % ('', modDate, modDate)
+        sql += "'%s', '%s', " % ('N', '')
+        sql += "'%s', '%s', '%s', '%s');" % ('', '', modDate, modDate)
         self.cur.execute(sql)
         # create participants table
         sql = "CREATE TABLE participants ("
         sql += "id INTEGER NOT NULL PRIMARY KEY, "
-        sql += "user_name TEXT, "
+        sql += "participant_code TEXT, "
         sql += "first_name TEXT, "
         sql += "last_name TEXT,"
         sql += "email_address TEXT, "
@@ -1653,11 +1433,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         sql += "tags TEXT, "
         sql += "data_status TEXT, "
         sql += "data_security TEXT, "
-        sql += "owner_id INTEGER, "
+        sql += "interviewer TEXT, "
         sql += "date_created TEXT, "
         sql += "date_modified TEXT,"
-        sql += "FOREIGN KEY(project_id) REFERENCES project(id), "
-        sql += "FOREIGN KEY(owner_id) REFERENCES participants(id) )"
+        sql += "FOREIGN KEY(project_id) REFERENCES project(id) )"
         self.cur.execute(sql)
         # create interview participants table
         sql = "CREATE TABLE interviewees ("
@@ -1676,18 +1455,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         sql += "id INTEGER NOT NULL PRIMARY KEY, "
         sql += "interview_id INTEGER, "
         sql += "sequence_number INTEGER, "
-        sql += "content_code TEXT, "
+        sql += "primary_code TEXT, "
         sql += "section_code TEXT, "
         sql += "section_text TEXT, "
         sql += "note TEXT, "
-        sql += "use_period TEXT, "
-        sql += "use_period_start TEXT, "
-        sql += "use_period_end TEXT, "
-        sql += "annual_variation TEXT, "
-        sql += "annual_variation_months TEXT, "
+        sql += "date_time TEXT, "
+        sql += "date_time_start TEXT, "
+        sql += "date_time_end TEXT, "
+        sql += "time_of_year TEXT, "
+        sql += "time_of_year_months TEXT, "
         sql += "spatial_data_source TEXT, "
         sql += "spatial_data_scale TEXT, "
         sql += "geom_source TEXT, "
+        sql += "content_codes TEXT, "
         sql += "tags TEXT, "
         sql += "media_start_time TEXT, "
         sql += "media_end_time TEXT, "
@@ -1746,25 +1526,149 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
 
 
     ########################################################
-    #               manage project tables                  #
+    #               projects tab functions                 #
     ########################################################
 
     #
+    # enable project
+
+    def projectEnable(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # main tabs
+        self.tbProjectDetails.setEnabled(True)
+        self.tbPeople.setEnabled(True)
+        self.tbInterviews.setEnabled(True)
+        self.pbCreateHeritage1Archive.setEnabled(True)
+        
+    #
+    # disable project
+
+    def projectDisable(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # main tabs
+        self.tbProjectDetails.setDisabled(True)
+        self.tbPeople.setDisabled(True)
+        self.tbInterviews.setDisabled(True)
+        self.pbCreateHeritage1Archive.setDisabled(True)
+        
+    #
+    # enable project edit
+
+    def projectEnableEdit(self):
+
+        if self.projectState <> 'load' and self.pbDialogClose.isEnabled():
+            if self.debug:
+                QgsMessageLog.logMessage(self.myself())
+            # other tabs & main control
+            self.pbDialogClose.setDisabled(True)
+            self.twMapBioSettings.tabBar().setDisabled(True)
+            # controls on this tab
+            self.pbProjectSave.setEnabled(True)
+            self.pbProjectCancel.setEnabled(True)
+            # dialog close
+            self.pbDialogClose.setDisabled(True)
+
+    #
+    # disable project edit
+
+    def projectDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # other tabs & main control
+        self.pbDialogClose.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
+        # controls on this tab
+        self.pbProjectSave.setDisabled(True)
+        self.pbProjectCancel.setDisabled(True)
+        # dialog close
+        self.pbDialogClose.setEnabled(True)
+
+    #
+    # process project content codes
+
+    def projectParseProjectCodes(self,codes,defaults):
+
+        self.projCodes = []
+        self.projDefs = []
+        codeList = codes.split('\n')
+        codeList.sort()
+        for item in codeList:
+            if item <> '' and '=' in item:
+                code, defn = item.split('=')
+                if code <> '' and defn <> '':
+                    self.projCodes.append(code.strip())
+                    self.projDefs.append(defn.strip())
+                    self.cbDefaultCode.addItem(defn.strip())
+                    self.cbPointCode.addItem(defn.strip())
+                    self.cbLineCode.addItem(defn.strip())
+                    self.cbPolygonCode.addItem(defn.strip())
+        if len(codeList) > 0 and not defaults is None and defaults <> '':
+            dCodes = defaults.split('|||')
+            for dc in dCodes:
+                dDef,dCode = dc.split('||')
+                if dDef == 'dfc':
+                    if dCode in self.projCodes:
+                        idx = self.projCodes.index(dCode)
+                    else:
+                        idx = 0
+                    self.cbDefaultCode.setCurrentIndex(idx)
+                if dDef == 'ptc':
+                    if dCode in self.projCodes:
+                        idx = self.projCodes.index(dCode)
+                    else:
+                        idx = 0
+                    self.cbPointCode.setCurrentIndex(idx)
+                if dDef == 'lnc':
+                    if dCode in self.projCodes:
+                        idx = self.projCodes.index(dCode)
+                    else:
+                        idx = 0
+                    self.cbLineCode.setCurrentIndex(idx)
+                if dDef == 'plc':
+                    if dCode in self.projCodes:
+                        idx = self.projCodes.index(dCode)
+                    else:
+                        idx = 0
+                    self.cbPolygonCode.setCurrentIndex(idx)
+        
+    #
+    # refresh project codes
+
+    def projectRefreshCodes(self):
+
+        codes = self.pteContentCodes.document().toPlainText()
+        if self.projCodes <> []:
+            dfc = self.projCodes[self.cbDefaultCode.currentIndex()]
+            ptc = self.projCodes[self.cbPointCode.currentIndex()]
+            lnc = self.projCodes[self.cbLineCode.currentIndex()]
+            plc = self.projCodes[self.cbPolygonCode.currentIndex()]
+            defaultCodes = 'dfc||%s|||ptc||%s|||lnc||%s|||plc||%s' % (dfc,ptc,lnc,plc)
+        else:
+            defaultCodes = ''
+        self.cbDefaultCode.clear()
+        self.cbPointCode.clear()
+        self.cbLineCode.clear()
+        self.cbPolygonCode.clear()
+        self.projectParseProjectCodes(codes,defaultCodes)
+        
+    #
     # read project table
     
-    def readProjectTable(self):
+    def projectTableRead(self):
 
         self.projectState = 'load'
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT id, code, description, note, tags, "
-        sql += "citations, default_codes, default_time_periods, "
-        sql += "default_annual_variation, date_created FROM project;"
+        sql += "content_codes, dates_and_times, "
+        sql += "times_of_year, date_created, default_codes FROM project;"
         rs = self.cur.execute(sql)
         projData = rs.fetchall()
         self.projId = int(projData[0][0])
@@ -1773,26 +1677,27 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             self.pteProjectDescription.setPlainText(projData[0][2])
             self.pteProjectNote.setPlainText(projData[0][3])
             self.leProjectTags.setText(projData[0][4])
-            self.pteProjectCitations.setPlainText(projData[0][5])
-            self.pteContentCodes.setPlainText(projData[0][6])
-            self.pteTimePeriods.setPlainText(projData[0][7])
-            self.pteAnnualVariation.setPlainText(projData[0][8])
-        self.projDate = projData[0][9]
+            self.pteContentCodes.setPlainText(projData[0][5])
+            self.pteDateAndTime.setPlainText(projData[0][6])
+            self.pteTimeOfYear.setPlainText(projData[0][7])
+            self.cbDefaultCode.clear()
+            self.cbPointCode.clear()
+            self.cbLineCode.clear()
+            self.cbPolygonCode.clear()
+            if projData[0][5] <> '':
+                self.projectParseProjectCodes(projData[0][5],projData[0][9])
+            self.projDate = projData[0][8]
 
         self.projectState = 'edit'
 
     # 
     # update project table
     
-    def saveProjectTable(self):
+    def projectTableWrite(self):
         
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM project;"
         rs = self.cur.execute(sql)
         projData = rs.fetchall()
@@ -1800,11 +1705,15 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         description = self.pteProjectDescription.document().toPlainText()
         tags = self.leProjectTags.text()
         note = self.pteProjectNote.document().toPlainText()
-        citations = self.pteProjectCitations.document().toPlainText()
         dataStatus = 'N'
-        defaultCodes = self.pteContentCodes.document().toPlainText()
-        timePeriods = self.pteTimePeriods.document().toPlainText()
-        annualVariation = self.pteAnnualVariation.document().toPlainText()
+        contentCodes = self.pteContentCodes.document().toPlainText()
+        datesTimes = self.pteDateAndTime.document().toPlainText()
+        timesOfYear = self.pteTimeOfYear.document().toPlainText()
+        dfc = self.projCodes[self.cbDefaultCode.currentIndex()]
+        ptc = self.projCodes[self.cbPointCode.currentIndex()]
+        lnc = self.projCodes[self.cbLineCode.currentIndex()]
+        plc = self.projCodes[self.cbPolygonCode.currentIndex()]
+        defaultCodes = 'dfc||%s|||ptc||%s|||lnc||%s|||plc||%s' % (dfc,ptc,lnc,plc)
         if self.projDate == None or self.projDate == '':
             createDate = datetime.datetime.now().isoformat()[:10]
             modDate = createDate
@@ -1813,11 +1722,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             modDate = datetime.datetime.now().isoformat()[:10] 
         if projData[0][0] == None:
             sql = "INSERT INTO project (id, code, description, note, tags, "
-            sql += "data_status, citations, default_codes, "
-            sql += "default_time_periods, default_annual_variation, date_created, date_modified) "
+            sql += "data_status, content_codes, default_codes"
+            sql += "dates_and_times, times_of_year, date_created, date_modified) "
             sql += "VALUES (%d, '%s', '%s', '%s', '%s', " % (1, code, description, note, tags)
-            sql += "'%s', '%s', '%s', " % (dataStatus ,citations, defaultCodes)
-            sql += "'%s', '%s', '%s', '%s');" % (timePeriods, annualVariation, createDate, modDate)
+            sql += "'%s', '%s', '%s', " % (dataStatus, contentCodes, defaultCodes)
+            sql += "'%s', '%s', '%s', '%s');" % (datesTimes, timesOfYear, createDate, modDate)
         else:
             sql = "UPDATE project SET "
             sql += "code = '%s', " % code
@@ -1825,33 +1734,29 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "note = '%s', " % note
             sql += "tags = '%s', " % tags
             sql += "data_status = '%s', " % dataStatus
-            sql += "citations = '%s', " % citations
-            sql += "default_codes = '%s', " % defaultCodes
-            sql += "default_time_periods = '%s', " % timePeriods
-            sql += "default_annual_variation = '%s', " % annualVariation
+            sql += "content_codes = '%s', " % contentCodes
+            sql += "default_codes = '%s' , " % defaultCodes
+            sql += "dates_and_times = '%s', " % datesTimes
+            sql += "times_of_year = '%s', " % timesOfYear
             sql += "date_created = '%s', " % createDate
             sql += "date_modified = '%s' " % modDate
             sql += "WHERE id = %d;" % self.projId
         self.cur.execute(sql)
         self.conn.commit()
-        self.disableProjectEdit()
+        self.projectDisableEdit()
 
     #
     # cancel project table updates
 
-    def cancelProjectTable(self):
+    def projectTableCancel(self):
 
-        if self.projectDebug:
-            if self.debugFile == True:
-                self.df.write(self.myself()+ '\n')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.projectTableRead()
+        self.projectDisableEdit()
 
-        self.readProjectTable()
-        self.disableProjectEdit()
 
-        
     ########################################################
     #               manage participant tables              #
     ########################################################
@@ -1859,18 +1764,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add / update participant record to participant table widget
 
-    def setParticipant(self,x,rec):
+    def participantSet(self,x,rec):
+
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[0]))
-        item.setToolTip('Id')
+        item.setToolTip('Map Biographer Participant Id')
         self.tblParticipants.setItem(x,0,item)
         # user name
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[1]))
-        item.setToolTip('User Name')
+        item.setToolTip('Participant Code')
         self.tblParticipants.setItem(x,1,item)
         # first name
         item = QtGui.QTableWidgetItem()
@@ -1888,9 +1794,12 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read participant list
 
-    def readParticipantList(self):
+    def participantListRead(self):
             
-        sql = "SELECT id, user_name, first_name, last_name FROM participants;"
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        sql = "SELECT id, participant_code, first_name, last_name FROM participants;"
         rs = self.cur.execute(sql)
         partData = rs.fetchall()
         # clear old data and setup row and column counts
@@ -1900,14 +1809,14 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # set header
         header = []
         header.append('Id')
-        header.append('User Name')
+        header.append('Participant Code')
         header.append('First Name')
         header.append('Last Name')
         self.tblParticipants.setHorizontalHeaderLabels(header)
         # add content
         x = 0
         for rec in partData:
-            self.setParticipant(x,rec)
+            self.participantSet(x,rec)
             x = x + 1
         self.tblParticipants.setColumnWidth(0,75)
         self.tblParticipants.setColumnWidth(1,150)
@@ -1917,26 +1826,31 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # check if participant is selected or unselected
     
-    def checkParticipantSelection(self):
+    def participantCheckSelection(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblParticipants.selectedItems()) == 0:
             # change widget states
-            self.disableParticipantEdit()
+            self.participantDisableEdit()
         else:
             # change widget states
-            self.enableParticipantEdit()
+            self.participantEnableEdit()
             # read information
-            self.readParticipantRecord()
+            self.participantRead()
 
     #
     # set edit of participant
 
-    def enableParticipantEdit(self):
+    def participantEnableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # other tabs & main control
-        self.twSettings.setDisabled(True)
-        self.twProject.setDisabled(True)
-        self.twInterviews.setDisabled(True)
         self.pbDialogClose.setDisabled(True)
+        self.twMapBioSettings.tabBar().setDisabled(True)
         # controls on this tab
         self.tblParticipants.setDisabled(True)
         self.pbParticipantNew.setDisabled(True)
@@ -1949,14 +1863,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # disable edit of participant
 
-    def disableParticipantEdit(self):
+    def participantDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # other tabs
-        self.twSettings.setEnabled(True)
-        self.twProject.setEnabled(True)
-        self.twInterviews.setEnabled(True)
         self.pbDialogClose.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
         # controls on this tab
-        self.clearParticipantValues()
+        self.participantClearValues()
         self.tblParticipants.setEnabled(True)
         self.pbParticipantNew.setEnabled(True)
         self.pbParticipantSave.setDisabled(True)
@@ -1970,8 +1886,12 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear participant values
 
-    def clearParticipantValues(self):
-        self.leParticipantUserName.setText('')
+    def participantClearValues(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.leParticipantCode.setText('')
         self.leFirstName.setText('')
         self.leLastName.setText('')
         self.leEmail.setText('')
@@ -1983,15 +1903,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.cbMaritalStatus.setCurrentIndex(0)
         self.leParticipantTags.setText('')
         self.pteParticipantNote.setPlainText('')
-        self.clearAddresses()
-        self.clearTelecoms()
+        self.addressClear()
+        self.telecomClear()
         
     #
     # new participant
 
-    def newParticipantEdit(self):
-        self.clearParticipantValues()
-        self.enableParticipantEdit()
+    def participantNew(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.participantClearValues()
+        self.participantEnableEdit()
         self.pgAddresses.setDisabled(True)
         self.pgTelecoms.setDisabled(True)
         sql = "SELECT max(id) FROM participants;"
@@ -2001,14 +1925,18 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             pass
         else:
             self.partId = int(partData[0][0]) + 1
-        self.leParticipantUserName.setFocus()
+        self.leParticipantCode.setFocus()
 
     #
     # cancel participant edits
 
-    def cancelParticipantEdit(self):
-        self.clearParticipantValues()
-        self.disableParticipantEdit()
+    def participantCancelEdit(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.participantClearValues()
+        self.participantDisableEdit()
         row = self.tblParticipants.currentRow()
         self.tblParticipants.setItemSelected(self.tblParticipants.item(row,0),False)
         self.tblParticipants.setItemSelected(self.tblParticipants.item(row,1),False)
@@ -2018,17 +1946,21 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read participant
 
-    def readParticipantRecord(self):
+    def participantRead(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.tbxParticipants.setEnabled(True)
         row = int(self.tblParticipants.currentRow())
         self.partId = int(self.tblParticipants.item(row,0).text())
-        sql = "SELECT id, user_name, first_name, last_name, "
+        sql = "SELECT id, participant_code, first_name, last_name, "
         sql += "email_address, community, family, maiden_name, "
         sql += "gender, marital_status, birth_date, tags, note, "
         sql += "date_created FROM participants WHERE id = %d" % self.partId
         rs = self.cur.execute(sql)
         partData = rs.fetchall()
-        self.leParticipantUserName.setText(partData[0][1])
+        self.leParticipantCode.setText(partData[0][1])
         self.leFirstName.setText(partData[0][2])
         self.leLastName.setText(partData[0][3])
         self.leEmail.setText(partData[0][4])
@@ -2060,18 +1992,22 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.leBirthDate.setText(partData[0][10])
         self.leParticipantTags.setText(partData[0][11])
         self.pteParticipantNote.setPlainText(partData[0][12])
-        self.readAddressList()
-        self.readTelecomList()
+        self.addressListRead()
+        self.telecomListRead()
         self.contDate = partData[0][13]
 
     #
     # update participant
 
-    def updateParticipantRecord(self):
+    def participantWrite(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM participants;"
         rs = self.cur.execute(sql)
         partData = rs.fetchall()
-        userName = self.leParticipantUserName.text()
+        partCode = self.leParticipantCode.text()
         firstName = self.leFirstName.text()
         lastName = self.leLastName.text()
         email = self.leEmail.text()
@@ -2112,49 +2048,72 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             createDate = self.contDate
             modDate = datetime.datetime.now().isoformat()[:10] 
         if partData[0][0] == None or partData[0][0] < self.partId:
-            sql = "INSERT into participants (id, user_name, first_name, "
-            sql += "last_name, email_address, community, family, "
-            sql += "maiden_name, gender, marital_status, birth_date, tags, "
-            sql += "note, date_created, date_modified) "
-            sql += "VALUES (%d, '%s', '%s', '%s', '%s', " % (self.partId, userName, firstName, lastName, email)
-            sql += "'%s', '%s', '%s', '%s', " % (community, family, maidenName, gender)
-            sql += "'%s', '%s', '%s', " % (maritalStatus, birthDate, tags)
-            sql += "'%s', '%s', '%s');" % (note, createDate, modDate)
-            rCnt = self.tblParticipants.rowCount()
-            self.tblParticipants.setRowCount(rCnt+1)
-            self.setParticipant(rCnt, [self.partId,userName,firstName,lastName])
+            sql = "SELECT count(*) FROM participants WHERE participant_code = '%s';" % partCode
+            rs = self.cur.execute(sql)
+            cntData = rs.fetchall()
+            if cntData[0][0] == 0:
+                commitOk = True
+                sql = "INSERT into participants (id, participant_code, first_name, "
+                sql += "last_name, email_address, community, family, "
+                sql += "maiden_name, gender, marital_status, birth_date, tags, "
+                sql += "note, date_created, date_modified) "
+                sql += "VALUES (%d, '%s', '%s', '%s', '%s', " % (self.partId, partCode, firstName, lastName, email)
+                sql += "'%s', '%s', '%s', '%s', " % (community, family, maidenName, gender)
+                sql += "'%s', '%s', '%s', " % (maritalStatus, birthDate, tags)
+                sql += "'%s', '%s', '%s');" % (note, createDate, modDate)
+                rCnt = self.tblParticipants.rowCount()
+                self.tblParticipants.setRowCount(rCnt+1)
+                self.participantSet(rCnt, [self.partId,partCode,firstName,lastName])
+            else:
+                commitOk = False
         else:
-            sql = "UPDATE participants SET "
-            sql += "user_name = '%s', " % userName
-            sql += "first_name = '%s', " % firstName
-            sql += "last_name = '%s', " % lastName
-            sql += "email_address = '%s', " % email
-            sql += "community = '%s', " % community
-            sql += "family = '%s', " % family
-            sql += "maiden_name = '%s', " % maidenName
-            sql += "gender = '%s', " % gender
-            sql += "marital_status = '%s', " % maritalStatus
-            sql += "birth_date = '%s', " % birthDate
-            sql += "tags = '%s', " % tags
-            sql += "note = '%s', " % note
-            sql += "date_created = '%s', " % createDate
-            sql += "date_modified = '%s' " % modDate
-            sql += "where id = %d;" % self.partId
-            self.setParticipant(self.tblParticipants.currentRow(), [self.partId,userName,firstName,lastName])
-        self.cur.execute(sql)
-        self.conn.commit()
-
-        self.disableParticipantEdit()
-        row = self.tblParticipants.currentRow()
-        self.tblParticipants.setItemSelected(self.tblParticipants.item(row,0),False)
-        self.tblParticipants.setItemSelected(self.tblParticipants.item(row,1),False)
-        self.tblParticipants.setItemSelected(self.tblParticipants.item(row,2),False)
-        self.tblParticipants.setItemSelected(self.tblParticipants.item(row,3),False)
+            sql = "SELECT id FROM participants WHERE participant_code = '%s';" % partCode
+            rs = self.cur.execute(sql)
+            cntData = rs.fetchall()
+            if cntData == [] or cntData[0][0] == self.partId:
+                commitOk = True
+                sql = "UPDATE participants SET "
+                sql += "participant_code = '%s', " % partCode
+                sql += "first_name = '%s', " % firstName
+                sql += "last_name = '%s', " % lastName
+                sql += "email_address = '%s', " % email
+                sql += "community = '%s', " % community
+                sql += "family = '%s', " % family
+                sql += "maiden_name = '%s', " % maidenName
+                sql += "gender = '%s', " % gender
+                sql += "marital_status = '%s', " % maritalStatus
+                sql += "birth_date = '%s', " % birthDate
+                sql += "tags = '%s', " % tags
+                sql += "note = '%s', " % note
+                sql += "date_created = '%s', " % createDate
+                sql += "date_modified = '%s' " % modDate
+                sql += "where id = %d;" % self.partId
+                self.participantSet(self.tblParticipants.currentRow(), [self.partId,partCode,firstName,lastName])
+            else:
+                commitOk = False
+        if commitOk == True:
+            self.cur.execute(sql)
+            self.conn.commit()
+            self.participantDisableEdit()
+            row = self.tblParticipants.currentRow()
+            self.tblParticipants.setItemSelected(self.tblParticipants.item(row,0),False)
+            self.tblParticipants.setItemSelected(self.tblParticipants.item(row,1),False)
+            self.tblParticipants.setItemSelected(self.tblParticipants.item(row,2),False)
+            self.tblParticipants.setItemSelected(self.tblParticipants.item(row,3),False)
+        else:
+            messageText = "The Participant Code '%s' is not unique. " % partCode
+            messageText += "Modify the code and try again to save."
+            response = QtGui.QMessageBox.warning(self, 'Warning',
+               messageText, QtGui.QMessageBox.Ok)
         
     #
     # delete participant
 
-    def deleteParticipantRecord(self):
+    def participantDelete(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # check if participant
         sql = "SELECT count(*) FROM interviewees WHERE participant_id = %d" % self.partId
         rs = self.cur.execute(sql)
@@ -2162,14 +2121,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         isParticipant = False
         if confData[0][0] > 0:
             isParticipant = True
-        # check if interviewer
-        sql = "SELECT count(*) FROM interviews WHERE owner_id = %d" % self.partId
-        rs = self.cur.execute(sql)
-        confData = rs.fetchall()
-        isInterviwer = False
-        if confData[0][0] > 0:
-            isInterviewer = True
-        if isParticipant == True or isInterviewer == True:
+        if isParticipant == True:
             QtGui.QMessageBox.warning(self, 'Warning',
                "Can not delete this person. Currently referenced in an interview.", QtGui.QMessageBox.Ok)
         else:
@@ -2185,7 +2137,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql = "DELETE FROM participants WHERE id = %d" % self.partId
             self.cur.execute(sql)
             self.conn.commit()
-            self.disableParticipantEdit()
+            self.participantDisableEdit()
             # remove row
             row = self.tblParticipants.currentRow()
             self.tblParticipants.removeRow(row)
@@ -2203,12 +2155,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add / update address record to participant address table widget
 
-    def setAddress(self,x,rec):
+    def addressSet(self,x,rec):
+
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[0]))
-        item.setToolTip('Id')
+        item.setToolTip('Map Biographer Participant Id')
         self.tblAddresses.setItem(x,0,item)
         # address type
         item = QtGui.QTableWidgetItem()
@@ -2226,7 +2179,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read participant address list
 
-    def readAddressList(self):
+    def addressListRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT id, address_type, line_one FROM addresses "
         sql += "WHERE participant_id = %d" % self.partId
         rs = self.cur.execute(sql)
@@ -2244,33 +2201,42 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # add content
         x = 0
         for rec in addrData:
-            self.setAddress(x,rec)
+            self.addressSet(x,rec)
             x = x + 1
         self.tblAddresses.setColumnWidth(0,75)
         self.tblAddresses.setColumnWidth(1,50)
         self.tblAddresses.setColumnWidth(2,200)
-        self.disableAddressEdit()
+        self.addressDisableEdit()
 
     #
     # check if address is selected or unselected
     
-    def checkAddressSelection(self):
+    def addressCheckSelection(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblAddresses.selectedItems()) == 0:
             # change widget states
-            self.disableAddressEdit()
+            self.addressDisableEdit()
         else:
             # change widget states
-            self.enableAddressEdit()
+            self.addressEnableEdit()
             # read information
-            self.readAddressRecord()
+            self.addressRead()
 
     #
-    # set edit of address
+    # enable edit of address
 
-    def enableAddressEdit(self):
-        # tab list and buttons
-        self.frParticipants.setDisabled(True)
+    def addressEnableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # other tool boxes
+        self.pgBasicInfo.setDisabled(True)
+        self.pgTelecoms.setDisabled(True)
+        self.frPeopleControls.setDisabled(True)
         # other controls
         self.tblAddresses.setDisabled(True)
         self.pbAddNew.setDisabled(True)
@@ -2291,11 +2257,17 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # disable edit of address
 
-    def disableAddressEdit(self):
-        # tab list and buttons
-        self.frParticipants.setEnabled(True)
+    def addressDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # other tool boxes
+        self.pgBasicInfo.setEnabled(True)
+        self.pgTelecoms.setEnabled(True)
+        self.frPeopleControls.setEnabled(True)
         # other controls
-        self.clearAddressValues()
+        self.addressClearValues()
         self.tblAddresses.setEnabled(True)
         self.pbAddNew.setEnabled(True)
         self.pbAddSave.setDisabled(True)
@@ -2315,7 +2287,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear address values
 
-    def clearAddressValues(self):
+    def addressClearValues(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.cbAddType.setCurrentIndex(0)
         self.leLineOne.setText('')
         self.leLineTwo.setText('')
@@ -2328,9 +2304,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # new address
 
-    def newAddressEdit(self):
-        self.clearAddressValues()
-        self.enableAddressEdit()
+    def addressNew(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.addressClearValues()
+        self.addressEnableEdit()
         sql = "SELECT max(id) FROM addresses;"
         rs = self.cur.execute(sql)
         addrData = rs.fetchall()
@@ -2343,9 +2323,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # cancel address edits
 
-    def cancelAddressEdit(self):
-        self.clearAddressValues()
-        self.disableAddressEdit()
+    def addressCancelEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.addressClearValues()
+        self.addressDisableEdit()
         row = self.tblAddresses.currentRow()
         self.tblAddresses.setItemSelected(self.tblAddresses.item(row,0),False)
         self.tblAddresses.setItemSelected(self.tblAddresses.item(row,1),False)
@@ -2354,7 +2338,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read address
 
-    def readAddressRecord(self):
+    def addressRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         row = int(self.tblAddresses.currentRow())
         self.addrId = int(self.tblAddresses.item(row,0).text())
         sql = "SELECT * FROM addresses WHERE id = %d" % self.addrId
@@ -2379,7 +2367,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # update address
 
-    def updateAddressRecord(self):
+    def addressWrite(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM addresses WHERE participant_id = %d;" % self.partId
         rs = self.cur.execute(sql)
         addrData = rs.fetchall()
@@ -2413,7 +2405,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "'%s', '%s');" % (createDate, modDate)
             rCnt = self.tblAddresses.rowCount()
             self.tblAddresses.setRowCount(rCnt+1)
-            self.setAddress(rCnt, [self.addrId, addrType, lineOne])
+            self.addressSet(rCnt, [self.addrId, addrType, lineOne])
         else:
             sql = "UPDATE addresses SET "
             sql += "address_type = '%s', " % addrType
@@ -2426,11 +2418,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "date_created = '%s', " % createDate
             sql += "date_modified = '%s' " % modDate
             sql += "where id = %d;" % self.addrId
-            self.setAddress(self.tblAddresses.currentRow(), [self.addrId, addrType, lineOne])
+            self.addressSet(self.tblAddresses.currentRow(), [self.addrId, addrType, lineOne])
         self.cur.execute(sql)
         self.conn.commit()
 
-        self.disableAddressEdit()
+        self.addressDisableEdit()
         row = self.tblAddresses.currentRow()
         self.tblAddresses.setItemSelected(self.tblAddresses.item(row,0),False)
         self.tblAddresses.setItemSelected(self.tblAddresses.item(row,1),False)
@@ -2439,12 +2431,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # delete address
     
-    def deleteAddressRecord(self):
+    def addressDelete(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "DELETE FROM addresses WHERE id = %d" % self.addrId
         self.cur.execute(sql)
         self.conn.commit()
-        self.clearAddressValues()
-        self.disableAddressEdit()
+        self.addressClearValues()
+        self.addressDisableEdit()
         # remove row
         row = self.tblAddresses.currentRow()
         self.tblAddresses.removeRow(row)
@@ -2456,7 +2452,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear address widgets
 
-    def clearAddresses(self):
+    def addressClear(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.tblAddresses.clear()
         
 
@@ -2467,12 +2467,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add / update participant telecom record to telecom table widget
 
-    def setTelecom(self,x,rec):
+    def telecomSet(self,x,rec):
+
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[0]))
-        item.setToolTip('Id')
+        item.setToolTip('Map Biographer Participant Id')
         self.tblTelecoms.setItem(x,0,item)
         # user name
         item = QtGui.QTableWidgetItem()
@@ -2490,7 +2491,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read participant telecom list
 
-    def readTelecomList(self):
+    def telecomListRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT id, telecom_type, telecom FROM telecoms "
         sql += "WHERE participant_id = %d" % self.partId
         rs = self.cur.execute(sql)
@@ -2508,33 +2513,42 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # add content
         x = 0
         for rec in telData:
-            self.setTelecom(x,rec)
+            self.telecomSet(x,rec)
             x = x + 1
         self.tblTelecoms.setColumnWidth(0,75)
         self.tblTelecoms.setColumnWidth(1,50)
         self.tblTelecoms.setColumnWidth(2,200)
-        self.disableTelecomEdit()
+        self.telecomDisableEdit()
 
     #
     # check if telecom is selected or unselected
     
-    def checkTelecomSelection(self):
+    def telecomCheckSelection(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblTelecoms.selectedItems()) == 0:
             # change widget states
-            self.disableTelecomEdit()
+            self.telecomDisableEdit()
         else:
             # change widget states
-            self.enableTelecomEdit()
+            self.telecomEnableEdit()
             # read information
-            self.readTelecomRecord()
+            self.telecomRead()
 
     #
     # set edit of telecom
 
-    def enableTelecomEdit(self):
-        # tab list and buttons
-        self.frParticipants.setDisabled(True)
+    def telecomEnableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # other tool boxes
+        self.pgBasicInfo.setDisabled(True)
+        self.pgAddresses.setDisabled(True)
+        self.frPeopleControls.setDisabled(True)
         # other controls
         self.tblTelecoms.setDisabled(True)
         self.pbTelNew.setDisabled(True)
@@ -2550,11 +2564,17 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # disable edit of telecom
 
-    def disableTelecomEdit(self):
-        # tab list and buttons
-        self.frParticipants.setEnabled(True)
+    def telecomDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # other tool boxes
+        self.pgBasicInfo.setEnabled(True)
+        self.pgAddresses.setEnabled(True)
+        self.frPeopleControls.setEnabled(True)
         # other controls
-        self.clearTelecomValues()
+        self.telecomClearValues()
         self.tblTelecoms.setEnabled(True)
         self.pbTelNew.setEnabled(True)
         self.pbTelSave.setDisabled(True)
@@ -2569,16 +2589,24 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear telecom values
 
-    def clearTelecomValues(self):
+    def telecomClearValues(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.cbTelType.setCurrentIndex(0)
         self.leTelNumber.setText('')
         
     #
     # new telecom
 
-    def newTelecomEdit(self):
-        self.clearTelecomValues()
-        self.enableTelecomEdit()
+    def telecomNew(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.telecomClearValues()
+        self.telecomEnableEdit()
         sql = "SELECT max(id) FROM telecoms;"
         rs = self.cur.execute(sql)
         telData = rs.fetchall()
@@ -2591,9 +2619,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # cancel telecom edits
 
-    def cancelTelecomEdit(self):
-        self.clearTelecomValues()
-        self.disableTelecomEdit()
+    def telecomCancelEdits(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.telecomClearValues()
+        self.telecomDisableEdit()
         row = self.tblTelecoms.currentRow()
         self.tblTelecoms.setItemSelected(self.tblTelecoms.item(row,0),False)
         self.tblTelecoms.setItemSelected(self.tblTelecoms.item(row,1),False)
@@ -2602,7 +2634,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read telecom
 
-    def readTelecomRecord(self):
+    def telecomRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         row = int(self.tblTelecoms.currentRow())
         self.telelId = int(self.tblTelecoms.item(row,0).text())
         sql = "SELECT * FROM telecoms WHERE id = %d" % self.telelId
@@ -2626,7 +2662,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # update telecom
 
-    def updateTelecomRecord(self):
+    def telecomWrite(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM telecoms WHERE participant_id = %d;" % self.partId
         rs = self.cur.execute(sql)
         telData = rs.fetchall()
@@ -2657,7 +2697,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "'%s', '%s');" % (createDate, modDate)
             rCnt = self.tblTelecoms.rowCount()
             self.tblTelecoms.setRowCount(rCnt+1)
-            self.setTelecom(rCnt, [self.teleId, telType, telNumber])
+            self.telecomSet(rCnt, [self.teleId, telType, telNumber])
         else:
             sql = "UPDATE telecoms SET "
             sql += "telecom_type = '%s', " % telType
@@ -2665,11 +2705,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "date_created = '%s', " % createDate
             sql += "date_modified = '%s' " % modDate
             sql += "where id = %d;" % self.teleId
-            self.setTelecom(self.tblTelecoms.currentRow(), [self.teleId, telType, telNumber])
+            self.telecomSet(self.tblTelecoms.currentRow(), [self.teleId, telType, telNumber])
         self.cur.execute(sql)
         self.conn.commit()
 
-        self.disableTelecomEdit()
+        self.telecomDisableEdit()
         row = self.tblTelecoms.currentRow()
         self.tblTelecoms.setItemSelected(self.tblTelecoms.item(row,0),False)
         self.tblTelecoms.setItemSelected(self.tblTelecoms.item(row,1),False)
@@ -2678,12 +2718,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # delete telecom
     
-    def deleteTelecomRecord(self):
+    def telecomDelete(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "DELETE FROM telecoms WHERE id = %d" % self.teleId
         self.cur.execute(sql)
         self.conn.commit()
-        self.clearTelecomValues()
-        self.disableTelecomEdit()
+        self.telecomClearValues()
+        self.telecomDisableEdit()
         # remove row
         row = self.tblTelecoms.currentRow()
         self.tblTelecoms.removeRow(row)
@@ -2695,7 +2739,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear telecom widgets
 
-    def clearTelecoms(self):
+    def telecomClear(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.tblTelecoms.clear()
         
 
@@ -2706,18 +2754,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add / update interview record to interview table widget
 
-    def setInterview(self,x,rec):
+    def interviewSet(self,x,rec):
+
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[0]))
-        item.setToolTip('Id')
+        item.setToolTip('Map Biographer Interview Id')
         self.tblInterviews.setItem(x,0,item)
         # code
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[1]))
-        item.setToolTip('Code')
+        item.setToolTip('Interview Code')
         self.tblInterviews.setItem(x,1,item)
         # description
         item = QtGui.QTableWidgetItem()
@@ -2735,7 +2784,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read interview list
 
-    def readInterviewList(self):
+    def interviewListRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT id, code, description, data_status FROM interviews;"
         rs = self.cur.execute(sql)
         intvData = rs.fetchall()
@@ -2746,44 +2799,49 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # set header
         header = []
         header.append('Id')
-        header.append('Code')
+        header.append('Interview Code')
         header.append('Description')
         header.append('Status')
         self.tblInterviews.setHorizontalHeaderLabels(header)
         # add content
         x = 0
         for rec in intvData:
-            self.setInterview(x,rec)
+            self.interviewSet(x,rec)
             x = x + 1
-        self.disableInterviewEdit()
+        self.interviewDisableEdit()
         self.tblInterviews.setColumnWidth(0,75)
-        self.tblInterviews.setColumnWidth(1,75)
+        self.tblInterviews.setColumnWidth(1,125)
         self.tblInterviews.setColumnWidth(2,350)
         self.tblInterviews.setColumnWidth(3,75)
 
     #
     # check if interview is selected or unselected
     
-    def checkInterviewSelection(self):
+    def interviewCheckSelection(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblInterviews.selectedItems()) == 0:
             # change widget states
-            self.disableInterviewEdit()
+            self.interviewDisableEdit()
         else:
             # change widget states
-            self.enableInterviewEdit()
+            self.interviewEnableEdit()
             # read information
-            self.readInterviewRecord()
+            self.interviewRead()
 
     #
     # set edit of interview
 
-    def enableInterviewEdit(self):
+    def interviewEnableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # other tabs & main control
-        self.twSettings.setDisabled(True)
-        self.twProject.setDisabled(True)
-        self.twParticipants.setDisabled(True)
         self.pbDialogClose.setDisabled(True)
+        self.twMapBioSettings.tabBar().setDisabled(True)
         # controls on this tab
         self.tblInterviews.setDisabled(True)
         self.pbIntNew.setDisabled(True)
@@ -2796,14 +2854,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # disable edit of interview
 
-    def disableInterviewEdit(self):
+    def interviewDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # other tabs & main control
-        self.twSettings.setEnabled(True)
-        self.twProject.setEnabled(True)
-        self.twParticipants.setEnabled(True)
         self.pbDialogClose.setEnabled(True)
+        self.twMapBioSettings.tabBar().setEnabled(True)
         # controls on this tab
-        self.clearInterviewValues()
+        self.interviewClearValues()
         self.tblInterviews.setEnabled(True)
         self.pbIntNew.setEnabled(True)
         self.pbIntSave.setDisabled(True)
@@ -2816,7 +2876,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear interview values
 
-    def clearInterviewValues(self):
+    def interviewClearValues(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.leInterviewCode.setText('')
         self.pteInterviewDescription.setPlainText('')
         self.dteStart.setDateTime(datetime.datetime.strptime("2000-01-01 12:00","%Y-%m-%d %H:%M"))
@@ -2826,15 +2890,18 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.leInterviewLocation.setText('')
         self.pteInterviewNote.setPlainText('')
         self.cbInterviewSecurity.setCurrentIndex(0)
-        self.cbInterviewer.setCurrentIndex(0)
+        self.leInterviewer.setText('')
         
     #
     # new interview
 
-    def newInterviewEdit(self):
-        self.clearInterviewValues()
-        self.refreshInterviewerWidget()
-        self.enableInterviewEdit()
+    def interviewNew(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.interviewClearValues()
+        self.interviewEnableEdit()
         self.pgIntParticipants.setDisabled(True)
         sql = "SELECT max(id) FROM interviews;"
         rs = self.cur.execute(sql)
@@ -2848,9 +2915,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # cancel interview edits
 
-    def cancelInterviewEdit(self):
-        self.clearInterviewValues()
-        self.disableInterviewEdit()
+    def interviewCancel(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.interviewClearValues()
+        self.interviewDisableEdit()
         row = self.tblInterviews.currentRow()
         self.tblInterviews.setItemSelected(self.tblInterviews.item(row,0),False)
         self.tblInterviews.setItemSelected(self.tblInterviews.item(row,1),False)
@@ -2858,30 +2929,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.tblInterviews.setItemSelected(self.tblInterviews.item(row,3),False)
 
     #
-    # populate interviewer combobox
-
-    def refreshInterviewerWidget(self):
-        sql = "SELECT id, first_name, last_name "
-        sql += "FROM participants ORDER BY last_name, first_name;"
-        rs = self.cur.execute(sql)
-        partData = rs.fetchall()
-        self.cbInterviewer.clear()
-        self.interviewerList = []
-        for part in partData:
-            self.cbInterviewer.addItem("%s, %s" % (part[2],part[1]))
-            self.interviewerList.append(part)
-
-    #
     # read interview
 
-    def readInterviewRecord(self):
-        self.refreshInterviewerWidget()
+    def interviewRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.tbxInterview.setEnabled(True)
         row = int(self.tblInterviews.currentRow())
         self.intvId = int(self.tblInterviews.item(row,0).text())
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
-        sql += "data_security, owner_id, date_created, date_modified "
+        sql += "data_security, interviewer, date_created, date_modified "
         sql += "FROM interviews WHERE id = %d" % self.intvId
         rs = self.cur.execute(sql)
         intvData = rs.fetchall()
@@ -2901,25 +2961,26 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             self.cbInterviewSecurity.setCurrentIndex(2)
         else:
             self.cbInterviewSecurity.setCurrentIndex(3)
-        x = 0
-        for x in range(len(self.interviewerList)):
-            if self.interviewerList[x][0] == intvData[0][11]:
-                self.cbInterviewer.setCurrentIndex(x)
-                break
+        self.leInterviewer.setText(intvData[0][11])
         self.intvDate = intvData[0][12]
-        self.readInterviewParticipantList()
+        self.interviewParticipantRefresh()
+        self.interviewParticipantListRead()
 
     #
     # update interview
 
-    def updateInterviewRecord(self):
+    def interviewWrite(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM interviews;"
         rs = self.cur.execute(sql)
         intvData = rs.fetchall()
         code = self.leInterviewCode.text()
         description = self.pteInterviewDescription.document().toPlainText()
         startDate = self.dteStart.dateTime().toPyDateTime().isoformat()[:16].replace('T',' ')
-        endDate = self.dteStart.dateTime().toPyDateTime().isoformat()[:16].replace('T',' ')
+        endDate = self.dteEnd.dateTime().toPyDateTime().isoformat()[:16].replace('T',' ')
         tags = self.leInterviewTags.text()
         location = self.leInterviewLocation.text()
         note = self.pteInterviewNote.document().toPlainText()
@@ -2932,8 +2993,8 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             security = 'PR'
         else:
             security = 'PU'
-        # owner
-        ownerId = self.interviewerList[self.cbInterviewer.currentIndex()][0]
+        # interviewer
+        interviewer = self.leInterviewer.text()
         if self.intvDate == None or self.intvDate == '':
             createDate = datetime.datetime.now().isoformat()[:10]
             modDate = createDate
@@ -2941,49 +3002,71 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             createDate = self.intvDate
             modDate = datetime.datetime.now().isoformat()[:10] 
         if intvData[0][0] == None or intvData[0][0] < self.intvId:
-            sql = "INSERT into interviews (id, project_id, code, "
-            sql += "start_datetime, end_datetime, description, "
-            sql += "interview_location, note, tags, data_status, "
-            sql += "data_security, owner_id, date_created, date_modified) "
-            sql += "VALUES (%d, %d, " % (self.intvId, self.projId)
-            sql += "'%s', '%s', '%s', "% (code, startDate, endDate)
-            sql += "'%s', '%s', " % (description, location)
-            sql += "'%s', '%s', '%s', " % (note, tags, 'N')
-            sql += "'%s', %d, '%s', '%s');" % (security, ownerId, createDate, modDate)
-            rCnt = self.tblInterviews.rowCount()
-            self.tblInterviews.setRowCount(rCnt+1)
-            self.setInterview(rCnt, [self.intvId,code,description,'N'])
+            sql = "SELECT count(*) FROM interviews WHERE code = '%s';" % code
+            rs = self.cur.execute(sql)
+            cntData = rs.fetchall()
+            if cntData[0][0] == 0:
+                commitOk = True
+                sql = "INSERT into interviews (id, project_id, code, "
+                sql += "start_datetime, end_datetime, description, "
+                sql += "interview_location, note, tags, data_status, "
+                sql += "data_security, interviewer, date_created, date_modified) "
+                sql += "VALUES (%d, %d, " % (self.intvId, self.projId)
+                sql += "'%s', '%s', '%s', "% (code, startDate, endDate)
+                sql += "'%s', '%s', " % (description, location)
+                sql += "'%s', '%s', '%s', " % (note, tags, 'N')
+                sql += "'%s', '%s', '%s', '%s');" % (security, interviewer, createDate, modDate)
+                rCnt = self.tblInterviews.rowCount()
+                self.tblInterviews.setRowCount(rCnt+1)
+                self.interviewSet(rCnt, [self.intvId,code,description,'N'])
+            else:
+                commitOk = False
         else:
-            sql = "UPDATE interviews SET "
-            sql += "code = '%s', " % code
-            sql += "start_datetime = '%s', " % startDate
-            sql += "end_datetime = '%s', " % endDate
-            sql += "description = '%s', " % description
-            sql += "interview_location = '%s', " % location
-            sql += "note = '%s', " % note
-            sql += "tags = '%s', " % tags
-            sql += "data_security = '%s', " % security
-            sql += "data_status = '%s', " % self.interviewStatus
-            sql += "owner_id = %d, " % ownerId
-            sql += "date_created = '%s', " % createDate
-            sql += "date_modified = '%s' " % modDate
-            sql += "where id = %d;" % self.intvId
-            self.setInterview(self.tblInterviews.currentRow(), [self.intvId,code,description,self.interviewStatus])
-        self.cur.execute(sql)
-        self.conn.commit()
-
-        self.disableInterviewEdit()
-        row = self.tblInterviews.currentRow()
-        self.tblInterviews.setItemSelected(self.tblInterviews.item(row,0),False)
-        self.tblInterviews.setItemSelected(self.tblInterviews.item(row,1),False)
-        self.tblInterviews.setItemSelected(self.tblInterviews.item(row,2),False)
-        self.tblInterviews.setItemSelected(self.tblInterviews.item(row,3),False)
+            sql = "SELECT id FROM interviews WHERE code = '%s';" % code
+            rs = self.cur.execute(sql)
+            cntData = rs.fetchall()
+            if cntData == [] or cntData[0][0] == self.intvId:
+                commitOk = True
+                sql = "UPDATE interviews SET "
+                sql += "code = '%s', " % code
+                sql += "start_datetime = '%s', " % startDate
+                sql += "end_datetime = '%s', " % endDate
+                sql += "description = '%s', " % description
+                sql += "interview_location = '%s', " % location
+                sql += "note = '%s', " % note
+                sql += "tags = '%s', " % tags
+                sql += "data_security = '%s', " % security
+                sql += "data_status = '%s', " % self.interviewStatus
+                sql += "interviewer = '%s', " % interviewer
+                sql += "date_created = '%s', " % createDate
+                sql += "date_modified = '%s' " % modDate
+                sql += "where id = %d;" % self.intvId
+                self.interviewSet(self.tblInterviews.currentRow(), [self.intvId,code,description,self.interviewStatus])
+            else:
+                commitOk = False
+        if commitOk == True:
+            self.cur.execute(sql)
+            self.conn.commit()
+            self.interviewDisableEdit()
+            row = self.tblInterviews.currentRow()
+            self.tblInterviews.setItemSelected(self.tblInterviews.item(row,0),False)
+            self.tblInterviews.setItemSelected(self.tblInterviews.item(row,1),False)
+            self.tblInterviews.setItemSelected(self.tblInterviews.item(row,2),False)
+            self.tblInterviews.setItemSelected(self.tblInterviews.item(row,3),False)
+        else:
+            messageText = "The Interview Code '%s' is not unique. " % code
+            messageText += "Modify the code and try again to save."
+            response = QtGui.QMessageBox.warning(self, 'Warning',
+               messageText, QtGui.QMessageBox.Ok)
         
     #
     # delete interview
 
-    def deleteInterviewRecord(self):
+    def interviewDelete(self):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         dRec = False
         # check for referenced use in interview
         sql = "SELECT count(*) FROM interview_sections WHERE interview_id = %d" % self.intvId
@@ -3026,7 +3109,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql = "DELETE FROM interviews WHERE id = %d" % self.intvId
             self.cur.execute(sql)
             self.conn.commit()
-            self.disableInterviewEdit()
+            self.interviewDisableEdit()
             # remove row
             row = self.tblInterviews.currentRow()
             self.tblInterviews.removeRow(row)
@@ -3044,18 +3127,19 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # add / update interview participant record to participant table widget
 
-    def setInterviewParticipant(self,x,rec):
+    def interviewParticipantSet(self,x,rec):
+
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[0]))
-        item.setToolTip('Id')
+        item.setToolTip('Map Biographer Interview Id')
         self.tblInterviewParticipants.setItem(x,0,item)
         # user name
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
         item.setText(str(rec[1]))
-        item.setToolTip('Part. Id')
+        item.setToolTip('Map Biographer Participant Id')
         self.tblInterviewParticipants.setItem(x,1,item)
         # first name
         item = QtGui.QTableWidgetItem()
@@ -3067,7 +3151,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read interview participant list
 
-    def readInterviewParticipantList(self):
+    def interviewParticipantListRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT a.id, b.id, b.last_name || ', ' || b.first_name as name FROM interviewees a, "
         sql += "participants b "
         sql += "WHERE a.interview_id = %d and " % self.intvId
@@ -3087,33 +3175,41 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         # add content
         x = 0
         for rec in partData:
-            self.setInterviewParticipant(x,rec)
+            self.interviewParticipantSet(x,rec)
             x = x + 1
         self.tblInterviewParticipants.setColumnWidth(0,75)
         self.tblInterviewParticipants.setColumnWidth(1,75)
         self.tblInterviewParticipants.setColumnWidth(2,200)
-        self.disableInterviewParticipantEdit()
+        self.interviewParticipantDisableEdit()
 
     #
     # check if participant is selected or unselected
     
-    def checkInterviewParticipantSelection(self):
+    def interviewParticipantCheckSelection(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         if len(self.tblInterviewParticipants.selectedItems()) == 0:
             # change widget states
-            self.disableInterviewParticipantEdit()
+            self.interviewParticipantDisableEdit()
         else:
             # change widget states
-            self.enableInterviewParticipantEdit()
+            self.interviewParticipantEnableEdit()
             # read information
-            self.readInterviewParticipantRecord()
+            self.interviewParticipantRead()
 
     #
     # set edit of participant
 
-    def enableInterviewParticipantEdit(self):
-        # tab list and buttons
-        self.frInterviews.setDisabled(True)
+    def interviewParticipantEnableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        # other controls
+        self.pgIntBasic.setDisabled(True)
+        self.frInterviewControls.setDisabled(True)
         # other controls
         self.tblInterviewParticipants.setDisabled(True)
         self.pbIntPartNew.setDisabled(True)
@@ -3129,11 +3225,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # disable edit of participant
 
-    def disableInterviewParticipantEdit(self):
-        # tab list and buttons
-        self.frInterviews.setEnabled(True)
+    def interviewParticipantDisableEdit(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         # other controls
-        self.clearInterviewParticipantValues()
+        self.pgIntBasic.setEnabled(True)
+        self.frInterviewControls.setEnabled(True)
+        # other controls
+        self.interviewParticipantClearValues()
         self.tblInterviewParticipants.setEnabled(True)
         self.pbIntPartNew.setEnabled(True)
         self.pbIntPartSave.setDisabled(True)
@@ -3148,7 +3249,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear participant values
 
-    def clearInterviewParticipantValues(self):
+    def interviewParticipantClearValues(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.cbIntPartName.setCurrentIndex(0)
         self.leIntPartCommunity.setText('')
         self.leIntPartFamily.setText('')
@@ -3156,10 +3261,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # new participant
 
-    def newInterviewParticipantEdit(self):
-        self.clearInterviewParticipantValues()
-        self.refreshInterviewParticipantWidget()
-        self.enableInterviewParticipantEdit()
+    def interviewParticipantNew(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.interviewParticipantClearValues()
+        self.interviewParticipantEnableEdit()
         sql = "SELECT max(id) FROM interviewees;"
         rs = self.cur.execute(sql)
         partData = rs.fetchall()
@@ -3177,6 +3285,10 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     # update when participant selected
 
     def interviewParticipantSelection(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         x = self.cbIntPartName.currentIndex()
         if len(self.participantList) > 0:
             self.leIntPartCommunity.setText(self.participantList[x][3])
@@ -3185,9 +3297,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # cancel participant edits
 
-    def cancelInterviewParticipantEdit(self):
-        self.clearInterviewParticipantValues()
-        self.disableInterviewParticipantEdit()
+    def interviewParticipantCancel(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.interviewParticipantClearValues()
+        self.interviewParticipantDisableEdit()
         row = self.tblInterviewParticipants.currentRow()
         self.tblInterviewParticipants.setItemSelected(self.tblInterviewParticipants.item(row,0),False)
         self.tblInterviewParticipants.setItemSelected(self.tblInterviewParticipants.item(row,1),False)
@@ -3196,7 +3312,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # populate participant combobox
 
-    def refreshInterviewParticipantWidget(self):
+    def interviewParticipantRefresh(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT id, first_name, last_name, community, family "
         sql += "FROM participants ORDER BY last_name, first_name;"
         rs = self.cur.execute(sql)
@@ -3210,9 +3330,12 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # read participant
 
-    def readInterviewParticipantRecord(self):
-        self.clearInterviewParticipantValues()
-        self.refreshInterviewParticipantWidget()
+    def interviewParticipantRead(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.interviewParticipantClearValues()
         row = self.tblInterviewParticipants.currentRow()
         self.intvPartId = int(self.tblInterviewParticipants.item(row,0).text())
         partId = int(self.tblInterviewParticipants.item(row,1).text())
@@ -3232,7 +3355,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # update participant
 
-    def updateInterviewParticipantRecord(self):
+    def interviewParticipantWrite(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "SELECT max(id) FROM interviewees WHERE interview_id = %d;" % self.intvId
         rs = self.cur.execute(sql)
         partData = rs.fetchall()
@@ -3254,7 +3381,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "'%s', '%s', '%s', '%s');" % (community, family, createDate, modDate)
             rCnt = self.tblInterviewParticipants.rowCount()
             self.tblInterviewParticipants.setRowCount(rCnt+1)
-            self.setInterviewParticipant(rCnt, [self.intvPartId,participantId,userName])
+            self.interviewParticipantSet(rCnt, [self.intvPartId,participantId,userName])
         else:
             sql = "UPDATE interviewees SET "
             sql += "participant_id = '%s', " % participantId
@@ -3263,11 +3390,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             sql += "date_created = '%s', " % createDate
             sql += "date_modified = '%s' " % modDate
             sql += "where id = %d;" % self.intvPartId
-            self.setInterviewParticipant(self.tblInterviewParticipants.currentRow(), [self.intvPartId,participantId,userName])
+            self.interviewParticipantSet(self.tblInterviewParticipants.currentRow(), [self.intvPartId,participantId,userName])
         self.cur.execute(sql)
         self.conn.commit()
 
-        self.disableInterviewParticipantEdit()
+        self.interviewParticipantDisableEdit()
         row = self.tblInterviewParticipants.currentRow()
         self.tblInterviewParticipants.setItemSelected(self.tblInterviewParticipants.item(row,0),False)
         self.tblInterviewParticipants.setItemSelected(self.tblInterviewParticipants.item(row,1),False)
@@ -3276,12 +3403,16 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # delete participant
     
-    def deleteInterviewParticipantRecord(self):
+    def interviewParticipantDelete(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         sql = "DELETE FROM interviewees WHERE id = %d" % self.intvPartId
         self.cur.execute(sql)
         self.conn.commit()
-        self.clearInterviewParticipantValues()
-        self.disableInterviewParticipantEdit()
+        self.interviewParticipantClearValues()
+        self.interviewParticipantDisableEdit()
         # remove row
         row = self.tblInterviewParticipants.currentRow()
         self.tblInterviewParticipants.removeRow(row)
@@ -3293,7 +3424,11 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
     #
     # clear participant widgets
 
-    def clearInterviewParticipants(self):
+    def interviewParticipantClear(self):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
         self.tblInterviewParticipants.clear()
         
 

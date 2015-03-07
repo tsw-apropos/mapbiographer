@@ -93,7 +93,7 @@ class audioPlayer(QtCore.QObject):
         # do this as long as worker state value is set to recording
         data = wf.readframes(CHUNK)
         pos = wf.tell()
-        while data != '' and pos  <= fEnd and self.state == 'playing':
+        while data != '' and pos <= fEnd and self.state == 'playing':
             stream.write(data)
             data = wf.readframes(CHUNK)
             pos = wf.tell()

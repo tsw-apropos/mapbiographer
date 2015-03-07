@@ -50,6 +50,7 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         self.setupUi(self)
         self.iface = iface
         self.canvas = self.iface.mapCanvas()
+        self.setWindowTitle('LMB - Navigator')
         # project settings
         self.baseGroups = []
         self.baseGroupIdxs = []
@@ -78,6 +79,8 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         QtCore.QObject.connect(self.pbZoomToStudyArea, QtCore.SIGNAL("clicked()"), self.zoomToStudyArea)
         QtCore.QObject.connect(self.pbZoomIn, QtCore.SIGNAL("clicked()"), self.canvas.zoomIn)
         QtCore.QObject.connect(self.pbZoomOut, QtCore.SIGNAL("clicked()"), self.canvas.zoomOut)
+        # track scale
+        self.canvas.scale()
         # open project
         result = self.readSettings()
         #self.loadLayers()
@@ -164,13 +167,14 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         self.points_layer = None
         self.lines_layer = None
         self.polygons_layer = None
+        self.iface.actionRemoveAllFromOverview().activate(0)
         for layer in layers:
             validLayers.append(layer.name())
             if layer.name() == self.boundaryLayerName:
                 self.boundaryLayer = layer
-                self.iface.setActiveLayer(layer)
-                self.iface.actionAddToOverview().activate(0)
                 if self.iface.legendInterface().isLayerVisible(layer):
+                    self.iface.setActiveLayer(layer)
+                    self.iface.actionAddToOverview().activate(0)
                     self.pbBoundary.setText('Hide Boundary')
                 else:
                     self.pbBoundary.setText('Show Boundary')
@@ -178,14 +182,22 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 self.referenceLayer = layer
                 if self.iface.legendInterface().isLayerVisible(layer):
                     self.pbReference.setText('Hide Reference')
+                    self.iface.setActiveLayer(layer)
+                    self.iface.actionAddToOverview().activate(0)
                 else:
                     self.pbReference.setText('Show Reference')
             if layer.name() == 'lmb_points':
                 self.points_layer = layer
+                self.iface.setActiveLayer(layer)
+                self.iface.actionAddToOverview().activate(0)
             if layer.name() == 'lmb_lines':
                 self.lines_layer = layer
+                self.iface.setActiveLayer(layer)
+                self.iface.actionAddToOverview().activate(0)
             if layer.name() == 'lmb_polygons':
                 self.polygons_layer = layer
+                self.iface.setActiveLayer(layer)
+                self.iface.actionAddToOverview().activate(0)
         # boundary layer
         if not (self.boundaryLayerName in validLayers):
             return(-1)
@@ -211,10 +223,10 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
 
     def selectBase(self):
 
-        if self.debug == True:
-            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
-
         if self.projectLoading == False:
+            if self.debug == True:
+                QgsMessageLog.logMessage('mapNavigator: '+self.myself())
+            #
             listIdx = self.cbBase.currentIndex()
             for x in range(len(self.baseGroups)):
                 if x == listIdx:
@@ -234,9 +246,15 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         if self.projectLoading == False:
             if self.pbBoundary.text() == 'Hide Boundary':
                 self.iface.legendInterface().setLayerVisible(self.boundaryLayer,False)
+                self.iface.setActiveLayer(self.boundaryLayer)
+                # remove from overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbBoundary.setText('Show Boundary')
             else:
                 self.iface.legendInterface().setLayerVisible(self.boundaryLayer,True)
+                self.iface.setActiveLayer(self.boundaryLayer)
+                # add to overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbBoundary.setText('Hide Boundary')
 
     #
@@ -250,9 +268,15 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         if self.projectLoading == False:
             if self.pbReference.text() == 'Hide Reference':
                 self.iface.legendInterface().setLayerVisible(self.referenceLayer,False)
+                self.iface.setActiveLayer(self.referenceLayer)
+                # remove from overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbReference.setText('Show Reference')
             else:
                 self.iface.legendInterface().setLayerVisible(self.referenceLayer,True)
+                self.iface.setActiveLayer(self.referenceLayer)
+                # add to overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbReference.setText('Hide Reference')
         
     #
@@ -266,13 +290,31 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         if self.points_layer <> None and self.lines_layer <> None and self.polygons_layer <> None:
             if self.pbViewFeatures.text() == 'Show Features':
                 self.iface.legendInterface().setLayerVisible(self.points_layer, True)
+                self.iface.setActiveLayer(self.points_layer)
+                # add to overview
+                self.iface.actionAddToOverview().activate(0)
                 self.iface.legendInterface().setLayerVisible(self.lines_layer, True)
+                self.iface.setActiveLayer(self.lines_layer)
+                # add to overview
+                self.iface.actionAddToOverview().activate(0)
                 self.iface.legendInterface().setLayerVisible(self.polygons_layer, True)
+                self.iface.setActiveLayer(self.polygons_layer)
+                # add to overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbViewFeatures.setText('Hide Features')
             else:
                 self.iface.legendInterface().setLayerVisible(self.points_layer, False)
+                self.iface.setActiveLayer(self.points_layer)
+                # remove from overview
+                self.iface.actionAddToOverview().activate(0)
                 self.iface.legendInterface().setLayerVisible(self.lines_layer, False)
+                self.iface.setActiveLayer(self.lines_layer)
+                # remove from overview
+                self.iface.actionAddToOverview().activate(0)
                 self.iface.legendInterface().setLayerVisible(self.polygons_layer, False)
+                self.iface.setActiveLayer(self.polygons_layer)
+                # remove from overview
+                self.iface.actionAddToOverview().activate(0)
                 self.pbViewFeatures.setText('Show Features')
             
     #

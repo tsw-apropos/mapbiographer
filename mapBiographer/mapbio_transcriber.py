@@ -3,7 +3,7 @@
 /***************************************************************************
  mapBiographerTranscriber
                                  A QGIS plugin
- Effectively onduct direct to digital map biographies and traditional land
+ Effectively conduct direct to digital map biographies and traditional land
  use studies
                              -------------------
         begin                : 2014-05-13
@@ -26,9 +26,10 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 from pyspatialite import dbapi2 as sqlite
-import os, datetime, time
-import pyaudio
+import os, datetime, time, shutil
+import pyaudio, pydub
 from ui_mapbio_transcriber import Ui_mapbioTranscriber
+from mapbio_import import mapBioImport
 from mapbio_navigator import mapBiographerNavigator
 from audio_recorder import audioRecorder
 from audio_player import audioPlayer
@@ -53,15 +54,17 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.editDebug = False
         self.audioDebug = False
         self.spatialDebug = False
-        self.debugLog= True
         if self.basicDebug or self.editDebug or self.audioDebug or self.spatialDebug:
             self.myself = lambda: inspect.stack()[1][3]
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
+        # permitted map scale
+        self.maxDenom = 2500000
+        self.minDenom = 5000
+        self.scaleConnection = False
+        self.zoomMessage = 'None'
+        self.canDigitize = False
+        self.showZoomNotices = False
         #
         # begin setup process
         QtGui.QDockWidget.__init__(self)
@@ -88,6 +91,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.recordAudio = False
         self.interview_length = '00:00'
         self.intTimeSegment = 0
+        self.defaultCode = ''
+        self.pointCode = ''
+        self.lineCode = ''
+        self.polygonCode = ''
         # audio 
         self.pyAI = None
         self.audioDeviceIndex = None
@@ -102,12 +109,13 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # vector editing
         self.vectorEditing = False
         self.geomSourceAction = 'no change'
-        self.currentContentCode = ''
+        self.currentPrimaryCode = ''
+        self.currentMediaFiles = ''
         self.editLayer = None
-        self.previousSectionId = None
-        self.previousPointId = None
-        self.previousLineId = None
-        self.previousPolygonId = None
+        self.previousSectionId = 0
+        self.previousPointId = 0
+        self.previousLineId = 0
+        self.previousPolygonId = 0
         self.sectionData = None
         # special actions based on key states
         self.copyPrevious = False
@@ -129,12 +137,21 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # basic interface operation
         QtCore.QObject.connect(self.cbMode, QtCore.SIGNAL("currentIndexChanged(int)"), self.setLMBMode)
         QtCore.QObject.connect(self.pbClose, QtCore.SIGNAL("clicked()"), self.transcriberClose)
-        QtCore.QObject.connect(self.cbInterviewSelection, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewUpdateInfo)
+        QtCore.QObject.connect(self.cbInterviewSelection, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewSelect)
         # audio
         self.tbMediaPlay.setIcon(QtGui.QIcon(":/plugins/mapbiographer/media_play.png"))
         QtCore.QObject.connect(self.tbMediaPlay, QtCore.SIGNAL("clicked()"), self.audioPlayPause)
         self.tbAudioSettings.setMenu(QtGui.QMenu(self.tbAudioSettings))
+        # set shortcut at application level so that not over-ridden by QGIS settings
+        self.short = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Space"), self)
+        self.short.setContext(QtCore.Qt.ApplicationShortcut)
+        self.short.activated.connect(self.audioPlayPause)
+        #
         QtCore.QObject.connect(self.cbRecordAudio, QtCore.SIGNAL("currentIndexChanged(int)"), self.audioTest)
+        # import functions
+        QtCore.QObject.connect(self.pbImportFeatures, QtCore.SIGNAL("clicked()"), self.importFeatures)
+        QtCore.QObject.connect(self.pbImportAudio, QtCore.SIGNAL("clicked()"), self.importAudio)
+        QtCore.QObject.connect(self.pbRenumberSections, QtCore.SIGNAL("clicked()"), self.sectionRenumber)
         # interview controls
         QtCore.QObject.connect(self.pbStart, QtCore.SIGNAL("clicked()"), self.interviewStart)
         QtCore.QObject.connect(self.pbPause, QtCore.SIGNAL("clicked()"), self.interviewPause)
@@ -142,41 +159,67 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # section controls
         # widgets
         QtCore.QObject.connect(self.lwSectionList, QtCore.SIGNAL("itemSelectionChanged()"), self.sectionSelect)
-        QtCore.QObject.connect(self.spMediaStart, QtCore.SIGNAL("valueChanged(int)"), self.sectionEnableSaveCancel)
-        QtCore.QObject.connect(self.spMediaEnd, QtCore.SIGNAL("valueChanged(int)"), self.sectionEnableSaveCancel)
+        QtCore.QObject.connect(self.spMediaStart, QtCore.SIGNAL("valueChanged(int)"), self.audioSetStartValue)
+        QtCore.QObject.connect(self.spMediaEnd, QtCore.SIGNAL("valueChanged(int)"), self.audioSetEndValue)
         QtCore.QObject.connect(self.hsSectionMedia, QtCore.SIGNAL("valueChanged(int)"), self.audioUpdateCurrentPosition)
         QtCore.QObject.connect(self.cbSectionSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
-        QtCore.QObject.connect(self.cbFeatureStatus, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionFeatureStatusChanged)
-        QtCore.QObject.connect(self.cbTimePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
-        QtCore.QObject.connect(self.cbAnnualVariation, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
+        QtCore.QObject.connect(self.cbFeatureSource, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionFeatureSourceChanged)
+        QtCore.QObject.connect(self.cbDateTime, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
+        QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
+        QtCore.QObject.connect(self.pteSectionTags, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.pteSectionNote, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.pteSectionText, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
-        QtCore.QObject.connect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveTags)
+        QtCore.QObject.connect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveCodes)
+        # section reordering
+        QtCore.QObject.connect(self.tbMoveUp, QtCore.SIGNAL("clicked()"), self.sectionMoveUp)
+        QtCore.QObject.connect(self.tbMoveDown, QtCore.SIGNAL("clicked()"), self.sectionMoveDown)
         # buttons
         QtCore.QObject.connect(self.pbSaveSection, QtCore.SIGNAL("clicked()"), self.sectionSaveEdits)
         QtCore.QObject.connect(self.pbCancelSection, QtCore.SIGNAL("clicked()"), self.sectionCancelEdits)
         QtCore.QObject.connect(self.pbDeleteSection, QtCore.SIGNAL("clicked()"), self.sectionDelete)
+        # photo controls
+        QtCore.QObject.connect(self.pbAddPhoto, QtCore.SIGNAL("clicked()"), self.photoAdd)
+        QtCore.QObject.connect(self.pbEditPhoto, QtCore.SIGNAL("clicked()"), self.photoEdit)
+        QtCore.QObject.connect(self.pbRemovePhoto, QtCore.SIGNAL("clicked()"), self.photoRemove)
+        QtCore.QObject.connect(self.twPhotos, QtCore.SIGNAL("itemSelectionChanged()"), self.photoSelect)
+        #
+        # photo list widget settings
+        self.photoSpacing = 10
+        self.thumbnailSize = 112
+        self.twPhotos.setIconSize(QtCore.QSize(self.thumbnailSize,self.thumbnailSize))
+        self.twPhotos.setColumnCount(2)
+        self.twPhotos.setGridStyle(QtCore.Qt.NoPen)
+        # Set the default column width and hide the header
+        self.twPhotos.verticalHeader().setDefaultSectionSize(self.thumbnailSize+self.photoSpacing)
+        self.twPhotos.verticalHeader().hide()
+         # Set the default row height and hide the header
+        self.twPhotos.horizontalHeader().setDefaultSectionSize(self.thumbnailSize+self.photoSpacing)
+        self.twPhotos.horizontalHeader().hide()
+        # Set the table width to show all images without horizontal scrolling
+        self.twPhotos.setMinimumWidth((self.thumbnailSize+self.photoSpacing)*1+(self.photoSpacing*2))
         #
         # map projections
         canvasCRS = self.canvas.mapSettings().destinationCrs()
         layerCRS = QgsCoordinateReferenceSystem(3857)
         self.xform = QgsCoordinateTransform(canvasCRS, layerCRS)
+        #
+
         # final prep for transcribing interviews
         # open project
         result = self.settingsRead()
         if result == 0:
-            result = self.transcriberOpen()
+            result, message = self.transcriberOpen()
             if result <> 0:
-                QtGui.QMessageBox.information(self, 'message',
-                'Missing Files. Please correct. Closing.', QtGui.QMessageBox.Ok)
+                QtGui.QMessageBox.information(self, 'LMB Notice',
+                    message, QtGui.QMessageBox.Ok)
                 self.transcriberClose()
+            else:
+                # set mode
+                self.setLMBMode()
         else:
-            QtGui.QMessageBox.information(self, 'message',
+            QtGui.QMessageBox.information(self, 'LMB Notice',
             'Map Biographer Settings Error. Please correct. Closing.', QtGui.QMessageBox.Ok)
             self.transcriberClose()
-        #
-        # set mode
-        self.setLMBMode()
 
     #
     # set LMB mode - set mode and and visibility and initial status of controls
@@ -184,86 +227,132 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     def setLMBMode(self):
 
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-        if self.cbMode.currentText() == 'Import':
+            QgsMessageLog.logMessage(self.myself())
+        self.interviewState = "Load"
+        self.lblTimer.setText("00:00:00")
+        if self.cbMode.currentText() == 'Import Interview':
             self.lmbMode = 'Import'
-            self.tbImportFeatures.setVisible(True)
-            self.tbImportAudio.setVisible(True)
+            if self.scaleConnection == True:
+                QtCore.QObject.disconnect(self.canvas, QtCore.SIGNAL("scaleChanged(double)"), self.mapToolsScaleNotification)
+            # hide audio recording
             self.cbRecordAudio.setVisible(False)
+            # display section reordering
             self.tbMoveUp.setVisible(True)
             self.tbMoveDown.setVisible(True)
+            # display media player
             self.tbMediaPlay.setVisible(True)
             self.hsSectionMedia.setVisible(True)
+            # hide timer
             self.lblTimeOfDay.setVisible(False)
-            self.vlLeftOfTimer.setVisible(False)
-            self.lblTimer.setVisible(False)
+            self.vlLeftOfTimer.setVisible(True)
+            self.lblTimer.setVisible(True)
+            # show start and end media times
             self.lblMediaStart.setVisible(True)
             self.spMediaStart.setVisible(True)
             self.lblMediaEnd.setVisible(True)
             self.spMediaEnd.setVisible(True)
+            # hide start and pause
+            self.pbStart.setVisible(False)
+            self.pbPause.setVisible(False)
+            # show and enable finish
+            self.pbFinish.setVisible(True)
+            self.pbFinish.setEnabled(True)
+            # show and enable import
+            self.pbImportFeatures.setVisible(True)
+            self.pbImportFeatures.setEnabled(True)
+            self.pbImportAudio.setVisible(True)
+            self.pbImportAudio.setEnabled(True)
+            self.pbRenumberSections.setVisible(True)
+            self.pbRenumberSections.setEnabled(True)
+            # enable photos
+            self.tpPhotos.setEnabled(True)
+            # show tabs
+            self.twSectionContent.tabBar().setVisible(True)
+            # enable section controls and non-spatial insert
+            self.frSectionControls.setEnabled(True)
+            self.tbNonSpatial.setEnabled(True)
+        elif self.cbMode.currentText() == 'Transcribe':
+            self.lmbMode = 'Transcribe'
+            if self.scaleConnection == True:
+                QtCore.QObject.disconnect(self.canvas, QtCore.SIGNAL("scaleChanged(double)"), self.mapToolsScaleNotification)
+            # hide audio recording
+            self.cbRecordAudio.setVisible(False)
+            # hide section reordering
+            self.tbMoveUp.setVisible(False)
+            self.tbMoveDown.setVisible(False)
+            # display media player
+            self.tbMediaPlay.setVisible(True)
+            self.hsSectionMedia.setVisible(True)
+            # hide timer
+            self.lblTimeOfDay.setVisible(False)
+            self.vlLeftOfTimer.setVisible(True)
+            self.lblTimer.setVisible(True)
+            # show start and end media times
+            self.lblMediaStart.setVisible(True)
+            self.spMediaStart.setVisible(True)
+            self.lblMediaEnd.setVisible(True)
+            self.spMediaEnd.setVisible(True)
+            # hide start, pause and finish
             self.pbStart.setVisible(False)
             self.pbPause.setVisible(False)
             self.pbFinish.setVisible(False)
+            # hide import
+            self.pbImportFeatures.setVisible(False)
+            self.pbImportAudio.setVisible(False)
+            self.pbRenumberSections.setVisible(False)
+            # show tabs
             self.twSectionContent.tabBar().setVisible(True)
+            # enable photos
+            self.tpPhotos.setEnabled(True)
+            # enable section controls and non-spatial insert
             self.frSectionControls.setEnabled(True)
             self.tbNonSpatial.setEnabled(True)
         elif self.cbMode.currentText() == 'Conduct Interview':
             self.lmbMode = 'Interview'
-            self.tbImportFeatures.setVisible(False)
-            self.tbImportAudio.setVisible(False)
+            # control digitizing scale
+            QtCore.QObject.connect(self.canvas, QtCore.SIGNAL("scaleChanged(double)"), self.mapToolsScaleNotification)
+            self.scaleConnection = True
+            # show audio recording
             self.cbRecordAudio.setVisible(True)
+            # hide section reordering
             self.tbMoveUp.setVisible(False)
             self.tbMoveDown.setVisible(False)
+            # hide media player
             self.tbMediaPlay.setVisible(False)
             self.hsSectionMedia.setVisible(False)
+            # show timer
             self.lblTimeOfDay.setVisible(True)
             self.vlLeftOfTimer.setVisible(True)
             self.lblTimer.setVisible(True)
+            # hide start and end media times
             self.lblMediaStart.setVisible(False)
             self.spMediaStart.setVisible(False)
             self.lblMediaEnd.setVisible(False)
             self.spMediaEnd.setVisible(False)
+            # show start, pause and finish
             self.pbStart.setVisible(True)
+            self.pbStart.setEnabled(True)
             self.pbPause.setVisible(True)
             self.pbFinish.setVisible(True)
+            self.pbFinish.setDisabled(True)
+            # hide import
+            self.pbImportFeatures.setVisible(False)
+            self.pbImportAudio.setVisible(False)
+            self.pbRenumberSections.setVisible(False)
+            # hide tabs
             self.twSectionContent.tabBar().setVisible(False)
             self.frSectionControls.setDisabled(True)
+            # disable section controls
             self.tbNonSpatial.setDisabled(True)
-        else:
-            self.lmbMode = 'Transcribe'
-            self.tbImportFeatures.setVisible(False)
-            self.tbImportAudio.setVisible(False)
-            self.cbRecordAudio.setVisible(False)
-            self.tbMoveUp.setVisible(False)
-            self.tbMoveDown.setVisible(False)
-            self.tbMediaPlay.setVisible(True)
-            self.hsSectionMedia.setVisible(True)
-            self.lblTimeOfDay.setVisible(False)
-            self.vlLeftOfTimer.setVisible(False)
-            self.lblTimer.setVisible(False)
-            self.lblMediaStart.setVisible(True)
-            self.spMediaStart.setVisible(True)
-            self.lblMediaEnd.setVisible(True)
-            self.spMediaEnd.setVisible(True)
-            self.pbStart.setVisible(False)
-            self.pbPause.setVisible(False)
-            self.pbFinish.setVisible(False)
-            self.twSectionContent.tabBar().setVisible(True)
-            self.frSectionControls.setEnabled(True)
-            self.tbNonSpatial.setEnabled(True)
         try:
-            if self.points_layer <> None:
-                self.unloadInterview()
+            if self.points_layer <> None or self.lines_layer <> None:
+                self.interviewUnload()
         except:
             pass 
-        self.audioPopulateDeviceList()
-        self.interviewPopulateList()
+        self.audioLoadDeviceList()
+        self.interviewLoadList()
         # activate pan tool
-        self.mapToolsActivatePanTool()
+        self.interviewState = "View"
 
     #
     # redefine close event to make sure it closes properly because panel close
@@ -288,11 +377,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # icons
         # replace features
@@ -335,11 +420,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # break connections to custom tools
         result = QtCore.QObject.disconnect(self.pointTool, QtCore.SIGNAL("rbFinished(QgsGeometry*)"), self.mapToolsPlacePoint)
@@ -347,6 +428,235 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         result = QtCore.QObject.disconnect(self.polygonTool, QtCore.SIGNAL("rbFinished(QgsGeometry*)"), self.mapToolsPlacePolygon)
         result = QtCore.QObject.disconnect(self.tbPan, QtCore.SIGNAL("clicked()"), self.mapToolsActivatePanTool)
 
+
+    #####################################################
+    #                     data import                   #
+    #####################################################
+
+    #
+    # import features
+
+    def importFeatures(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        # disable interface
+        self.frInterviewSelection.setDisabled(True)
+        self.frInterviewActions.setDisabled(True)
+        self.frSectionControls.setDisabled(True)
+        # Create the dialog (after translation) and keep reference
+        s = QtCore.QSettings()
+        dirName = s.value('mapBiographer/projectDir')
+        self.importDialog = mapBioImport(self.iface, self.conn, self.cur, dirName)
+        # show the dialog
+        self.importDialog.show()
+        # Run the dialog event loop
+        result = self.importDialog.exec_()
+        dataDict = self.importDialog.returnData()
+        if dataDict <> {}:
+            # do import
+            # open layer
+            if os.path.exists(dataDict['source']):
+                self.interviewState = 'Import'
+                # open layer
+                inputLayer = QgsVectorLayer(dataDict['source'], 'input', 'ogr')
+                # get field names
+                fields = inputLayer.dataProvider().fields().toList()
+                x = 0
+                fieldDict = {}
+                for field in fields:
+                    fieldDict[field.name()] = [x,field.typeName()]
+                    x += 1
+                # check projection
+                crsSrc = inputLayer.crs()    
+                crsDest = QgsCoordinateReferenceSystem(3857)  
+                coordTransform = QgsCoordinateTransform(crsSrc, crsDest)
+                # begin importing
+                if inputLayer.geometryType() == QGis.Point:
+                    self.currentFeature = 'pt'
+                elif inputLayer.geometryType() == QGis.Line:
+                    self.currentFeature = 'ln'
+                elif inputLayer.geometryType() == QGis.Polygon:
+                    self.currentFeature = 'pl'
+                features = inputLayer.getFeatures()
+                cnt = inputLayer.featureCount()
+                x = 0
+                lastPercent = 0.0
+                progress = QtGui.QProgressDialog('Importing Features','Cancel',0,100,self)
+                progress.setWindowTitle('Import progress')
+                progress.setWindowModality(QtCore.Qt.WindowModal)
+                for feature in features:
+                    x += 1
+                    if (float(x)/cnt*100)+5 > lastPercent:
+                        lastPercent = float(x)/cnt*100
+                        progress.setValue(lastPercent)
+                        if progress.wasCanceled():
+                            break
+                    geom = feature.geometry()
+                    geom.transform(coordTransform)
+                    attrs = feature.attributes()
+                    self.sectionCreateRecord()
+                    #self.conn.commit()
+                    sql = "UPDATE interview_sections SET "
+                    if dataDict['sectionCode'] <> '--Create On Import--':
+                        idx = fieldDict[dataDict['sectionCode']][0]
+                        sql += 'section_code = "%s", ' % str(attrs[idx])
+                        self.currentSectionCode = str(attrs[idx])
+                        if dataDict['primaryCode'] <> '--None--':
+                            idx = fieldDict[dataDict['primaryCode']][0]
+                            sql += 'primary_code = "%s", ' % str(attrs[idx])
+                            self.currentPrimaryCode = str(attrs[idx])
+                    else:
+                        if dataDict['primaryCode'] <> '--None--':
+                            idx = fieldDict[dataDict['primaryCode']][0]
+                            sql += 'primary_code = "%s", ' % str(attrs[idx])
+                            self.currentPrimaryCode = str(attrs[idx])
+                            self.currentSectionCode = "%s%04d" % (self.currentPrimaryCode,self.currentSequence)
+                            sql += 'section_code = "%s", ' % self.currentSectionCode
+                    if dataDict['security'] <> '--None--':
+                        idx = fieldDict[dataDict['security']][0]
+                        sql += 'data_security = "%s", ' % str(attrs[idx])
+                    if dataDict['contentCodes'] <> '--None--':
+                        idx = fieldDict[dataDict['contentCodes']][0]
+                        sql += 'content_codes = "%s", ' % str(attrs[idx])
+                    if dataDict['tags'] <> '--None--':
+                        idx = fieldDict[dataDict['tags']][0]
+                        sql += 'tags = "%s", ' % str(attrs[idx])
+                    if dataDict['datesTimes'] <> '--None--':
+                        idx = fieldDict[dataDict['datesTimes']][0]
+                        sql += 'date_time = "%s", ' % str(attrs[idx])
+                    if dataDict['timeOfYear'] <> '--None--':
+                        idx = fieldDict[dataDict['timeOfYear']][0]
+                        sql += 'time_of_year = "%s", ' % str(attrs[idx])
+                    if dataDict['notes'] <> '':
+                        lst = dataDict['notes'].split(',')
+                        outText = ''
+                        for fld in lst:
+                            idx = fieldDict[fld][0]
+                            outText = outText + str(attrs[idx]) + '\n'
+                        sql += 'note = "%s", ' % outText
+                    if dataDict['sections'] <> '':
+                        lst = dataDict['sections'].split(',')
+                        outText = ''
+                        for fld in lst:
+                            idx = fieldDict[fld][0]
+                            outText = outText + str(attrs[idx]) + '\n'
+                        sql += 'section_text = "%s", ' % outText
+                    sql += 'spatial_data_source = "%s", ' % dataDict['spatialDataSource']
+                    sql += 'spatial_data_scale = "%s" ' % dataDict['spatialDataScale']
+                    sql += "WHERE interview_id = %d AND id = '%s' " % (self.interview_id, self.section_id)
+                    self.cur.execute(sql)
+                    if self.currentFeature == 'pt':
+                        self.point_id = self.previousPointId + 1
+                        self.previousPointId = self.point_id
+                        geom.convertToMultiType()
+                        sql = "INSERT INTO points "
+                        sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
+                        sql += "VALUES (%d,%d,%d, " % (self.point_id, self.interview_id, self.section_id)
+                        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
+                        sql += "GeomFromText('%s',3857));" % geom.exportToWkt()
+                        self.cur.execute(sql)
+                    elif self.currentFeature == 'ln':
+                        self.line_id = self.previousLineId + 1
+                        self.previousLineId = self.line_id
+                        geom.convertToMultiType()
+                        # insert into database
+                        sql = "INSERT INTO lines "
+                        sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
+                        sql += "VALUES (%d,%d,%d, " % (self.line_id, self.interview_id, self.section_id)
+                        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
+                        sql += "GeomFromText('%s',3857));" % geom.exportToWkt()
+                        self.cur.execute(sql)
+                    elif self.currentFeature == 'pl':
+                        self.polygon_id = self.previousPolygonId + 1
+                        self.previousPolygonId = self.polygon_id
+                        geom.convertToMultiType()
+                        # insert into database
+                        sql = "INSERT INTO polygons "
+                        sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
+                        sql += "VALUES (%d,%d,%d, " % (self.polygon_id, self.interview_id, self.section_id)
+                        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
+                        sql += "GeomFromText('%s',3857));" % geom.exportToWkt()
+                        self.cur.execute(sql)
+                self.conn.commit()
+                self.iface.messageBar().clearWidgets()
+                # reset to view state and reload
+                self.interviewUnload()
+                self.interviewLoad()
+                self.interviewState = 'View'
+        # enable interface
+        self.frInterviewSelection.setEnabled(True)
+        self.frInterviewActions.setEnabled(True)
+        self.frSectionControls.setEnabled(True)
+                
+    #
+    # import audio
+
+    def importAudio(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        s = QtCore.QSettings()
+        dirName = s.value('mapBiographer/projectDir')
+        fname = QtGui.QFileDialog.getOpenFileName(self, 'Select Audio File', '.', '*.wav')
+        if os.path.exists(fname):
+            # get audio file duration
+            audioLen = pydub.AudioSegment.from_file(fname).duration_seconds
+            audioMax = round(audioLen + 0.5)
+            # split into equal parts
+            secCnt = self.lwSectionList.count()
+            segLength = int(round(float(audioMax) / secCnt))
+            if segLength == 0:
+                messageText = 'The audio file is too short for the number of sections. '
+                messageText += 'Are you confident this is the correct file? '
+                messageText += 'Do you wish to proceed with the import?'
+                response = QtGui.QMessageBox.warning(self, 'Warning',
+                   messageText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+                if response == QtGui.QMessageBox.Yes:
+                    segLength = 1
+            if segLength >= 1:
+                # copy the file
+                destFile = self.cbInterviewSelection.currentText() + '.wav'
+                destPath = os.path.join(dirName,destFile)
+                shutil.copyfile(fname, destPath)
+                # get section ids
+                sql = "SELECT id, sequence_number FROM interview_sections "
+                sql += "WHERE interview_id = %d ORDER BY sequence_number;" % self.interview_id
+                rs = self.cur.execute(sql)
+                secIdList = rs.fetchall()
+                audioIdx = 0
+                audioAtEnd = False
+                x = 0
+                for secId in secIdList:
+                    x += 1
+                    if not audioAtEnd:
+                        QgsMessageLog.logMessage('x: %d of %d' % (x,secCnt))
+                        QgsMessageLog.logMessage('start: %d end: %d of %d' % (audioIdx, audioIdx+segLength, audioMax))
+                        if audioIdx + segLength >= audioMax:
+                            segLength = audioMax - audioIdx
+                            audioAtEnd = True
+                        if x == secCnt:
+                            segLength = audioMax - audioIdx
+                            QgsMessageLog.logMessage('match found')
+                        QgsMessageLog.logMessage(str(segLength))
+                        sql = "UPDATE interview_sections SET "
+                        sql += "media_start_time = '%s', " % self.seconds2timeString(audioIdx)
+                        sql += "media_end_time = '%s' " % self.seconds2timeString(audioIdx + segLength)
+                        sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, secId[0])
+                        self.cur.execute(sql)
+                        audioIdx = audioIdx + segLength
+                    else:
+                        sql = "UPDATE interview_sections SET "
+                        sql += "media_start_time = '00:00:00', "
+                        sql += "media_end_time = '00:00:00' " 
+                        sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, secId[0])
+                        self.cur.execute(sql)
+                self.conn.commit()
+                self.interviewUnload()
+                self.interviewLoad()
+            
 
     #####################################################
     #       time operations and notification            #
@@ -415,11 +725,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.projectLoading = True
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         s = QtCore.QSettings()
         rv = s.value('mapBiographer/projectDir')
@@ -464,6 +770,19 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         else:
             self.enableReference = False
             self.referenceLayerName = ''
+        rv = s.value('mapBiographer/maxScale')
+        if rv <>  '':
+            temp = int(rv.strip('"').strip("'").split(':')[1].replace(',',''))
+            self.minDenom = temp
+        rv = s.value('mapBiographer/minScale')
+        if rv <>  '':
+            temp = int(rv.strip('"').strip("'").split(':')[1].replace(',',''))
+            self.maxDenom = temp
+        rv = s.value('mapBiographer/zoomNotices')
+        if rv <>  '' and rv == 'Yes':
+            self.showZoomNotices = True
+        else:
+            self.showZoomNotices = False
         self.projectLoading = False
 
         return(0)
@@ -480,79 +799,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-        # method body
-        self.projectLoading = True
-        # connect to database
-        self.conn = sqlite.connect(os.path.join(self.projectDir,self.projectDB))
-        self.cur = self.conn.cursor()
-        #
-        # project info and defaults
-        sql = 'SELECT id,code,default_codes,default_time_periods,default_annual_variation FROM project;'
-        rs = self.cur.execute(sql)
-        projData = rs.fetchall()
-        # basic setup
-        self.leProjectCode.setText(projData[0][1])
-        # content codes
-        self.default_codes = ['Non-spatial']
-        self.lwProjectCodes.setMouseTracking(True)
-        self.lwProjectCodes.clear()
-        tempItem = QtGui.QListWidgetItem('S')
-        tempItem.setToolTip('Section')
-        self.lwProjectCodes.addItem(tempItem)
-        codeList = projData[0][2].split('\n')
-        for item in codeList:
-            if item <> '':
-                code, defn = item.split('=')
-                self.default_codes.append(defn.strip())
-                tempItem = QtGui.QListWidgetItem(code.strip())
-                tempItem.setToolTip(defn.strip())
-                self.lwProjectCodes.addItem(tempItem)
-        # section references
-        self.cbFeatureStatus.clear()
-        self.cbFeatureStatus.addItems(['none','is unique'])
-        self.cbFeatureStatus.setCurrentIndex(0)
-        # time periods
-        self.default_time_periods = ['R','U','N']
-        self.cbTimePeriod.clear()
-        self.cbTimePeriod.addItems(['Refused','Unknown','Not Recorded'])
-        if projData[0][3] <> None:
-            timeList = projData[0][3].split('\n')
-            for item in timeList:
-                if item <> '':
-                    defn,desc = item.split('=')
-                    self.default_time_periods.append(defn.strip())
-                    self.cbTimePeriod.addItem(desc.strip())
-        self.cbTimePeriod.setCurrentIndex(1)
-        # annnual variation
-        self.default_annual_variation = ['R','U','N','SP','SE','Y']
-        self.cbAnnualVariation.clear()
-        self.cbAnnualVariation.addItems(['Refused','Unknown','Not Recorded','Sporadic','Seasonal','All Year'])
-        if projData[0][4] <> None:
-            seasonList = projData[0][4].split('\n')
-            for item in seasonList:
-                if item <> '':
-                    defn,desc = item.split('=')
-                    self.default_annual_variation.append(defn.strip())
-                    self.cbAnnualVariation.addItem(desc.strip())
-        self.cbAnnualVariation.setCurrentIndex(1)
-        # security
-        self.default_security = ['PU','CO','RS','PR']
-        self.cbSectionSecurity.clear()
-        self.cbSectionSecurity.addItems(['Public','Community','Restricted','Private'])
-        self.cbSectionSecurity.setCurrentIndex(0)
-        #
-        # map parameters
-        # load QGIS project
-        if QgsProject.instance().fileName() <> self.qgsProject:
-            self.iface.newProject()
-            QgsProject.instance().read(QtCore.QFileInfo(self.qgsProject))
-        # gather information about what is available in the QGIS project
-        self.projectLoading = False
+            QgsMessageLog.logMessage(self.myself())
         # open navigator panel
         self.navigatorPanel = mapBiographerNavigator(self.iface)
         #
@@ -565,34 +812,128 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # show panel
         if self.ovPanel <> None:
             self.ovPanel.show()
+            
+        # method body
+        self.projectLoading = True
+        # connect to database
+        self.conn = sqlite.connect(os.path.join(self.projectDir,self.projectDB))
+        self.cur = self.conn.cursor()
+        #
+        # project info and defaults
+        sql = 'SELECT id,code,content_codes,dates_and_times,times_of_year,default_codes FROM project;'
+        rs = self.cur.execute(sql)
+        projData = rs.fetchall()
+        # basic setup
+        self.leProjectCode.setText(projData[0][1])
+        # content codes
+        self.project_codes = []
+        self.lwProjectCodes.setMouseTracking(True)
+        self.lwProjectCodes.clear()
+        codeList = projData[0][2].split('\n')
+        codeList.sort()
+        for item in codeList:
+            if item <> '':
+                code, defn = item.split('=')
+                self.project_codes.append(code.strip())
+                tempItem = QtGui.QListWidgetItem(code.strip())
+                tempItem.setToolTip(defn.strip())
+                self.lwProjectCodes.addItem(tempItem)
+        # set default codes
+        codeDefaults = projData[0][5]
+        if codeDefaults is None or codeDefaults == '':
+            self.projectLoading = False
+            return(1, 'Default codes not set. Closing.')
+        else:
+            codeDefaults = projData[0][5]
+            dCodes = projData[0][5].split('|||')
+            for dc in dCodes:
+                dDef,dCode = dc.split('||')
+                if dDef.strip() == 'dfc' and dCode in self.project_codes:
+                    self.defaultCode = dCode
+                if dDef.strip() == 'ptc' and dCode in self.project_codes:
+                    self.pointCode = dCode
+                if dDef.strip() == 'lnc' and dCode in self.project_codes:
+                    self.lineCode = dCode
+                if dDef.strip() == 'plc' and dCode in self.project_codes:
+                    self.polygonCode = dCode
+            if self.defaultCode == '':
+                self.projectLoading = False
+                return(1, 'Default codes are not set. Closing.')
+            if self.pointCode == '':
+                self.pointCode = self.defaultCode
+            if self.lineCode == '':
+                self.lineCode = self.defaultCode
+            if self.polygonCode == '':
+                self.polygonCode = self.defaultCode
+        # section references
+        self.cbFeatureSource.clear()
+        self.cbFeatureSource.addItems(['none','is unique'])
+        self.cbFeatureSource.setCurrentIndex(0)
+        # time periods
+        self.project_date_time = ['R','U','N']
+        self.cbDateTime.clear()
+        self.cbDateTime.addItems(['Refused','Unknown','Not Recorded'])
+        if projData[0][3] <> None:
+            timeList = projData[0][3].split('\n')
+            for item in timeList:
+                if item <> '':
+                    defn,desc = item.split('=')
+                    self.project_date_time.append(defn.strip())
+                    self.cbDateTime.addItem(desc.strip())
+        self.cbDateTime.setCurrentIndex(1)
+        # annnual variation
+        self.project_time_of_year = ['R','U','N','SP']
+        self.cbTimeOfYear.clear()
+        self.cbTimeOfYear.addItems(['Refused','Unknown','Not Recorded','Sporadic'])
+        if projData[0][4] <> None:
+            seasonList = projData[0][4].split('\n')
+            for item in seasonList:
+                if item <> '':
+                    defn,desc = item.split('=')
+                    self.project_time_of_year.append(defn.strip())
+                    self.cbTimeOfYear.addItem(desc.strip())
+        self.cbTimeOfYear.setCurrentIndex(1)
+        # security
+        self.project_security = ['PU','CO','PR']
+        self.cbSectionSecurity.clear()
+        self.cbSectionSecurity.addItems(['Public','Community','Private'])
+        self.cbSectionSecurity.setCurrentIndex(0)
+        #
+        # map parameters
+        # load QGIS project
+        if QgsProject.instance().fileName() <> self.qgsProject:
+            self.iface.newProject()
+            QgsProject.instance().read(QtCore.QFileInfo(self.qgsProject))
+        # gather information about what is available in the QGIS project
+        self.projectLoading = False
 
-        return(0)
+        return(0, "Be Happy")
 
     #
-    # populate interview list in combobox
+    # load interview list into combobox
     
-    def interviewPopulateList(self):
+    def interviewLoadList(self):
 
         if self.projectLoading == False:
             # use debug track order of calls
             if self.basicDebug:
-                if self.debugLog == True:
-                    QgsMessageLog.logMessage(self.myself())
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
+                QgsMessageLog.logMessage(self.myself())
             failMessage = 'No interviews could be found'
             # method body
-            if self.lmbMode in ('Interview','Import'):
+            if self.lmbMode == 'Interview':
                 sql = "SELECT a.id, a.code FROM interviews a "
                 sql += "WHERE a.data_status = 'N' AND a.id NOT IN "
                 sql += "(SELECT DISTINCT interview_id FROM interview_sections);"
                 rs = self.cur.execute(sql)
                 intvData = rs.fetchall()
+            elif self.lmbMode == 'Import':
+                sql = "SELECT a.id, a.code FROM interviews a "
+                sql += "WHERE a.data_status = 'N';"
+                rs = self.cur.execute(sql)
+                intvData = rs.fetchall()
             else:
                 sql = "SELECT a.id, a.code FROM interviews a "
-                sql += "WHERE a.data_status = 'RC' AND a.id IN "
-                sql += "(SELECT DISTINCT interview_id FROM interview_sections);"
+                sql += "WHERE a.data_status = 'RC';"
                 rs = self.cur.execute(sql)
                 intvData = rs.fetchall()
             #QgsMessageLog.logMessage('intvData len: %d ' % len(intvData))
@@ -603,7 +944,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 #                failMessage, QtGui.QMessageBox.Ok)
                 if self.lmbMode == 'Interview':
                     self.pbStart.setDisabled(True)
+                else:
+                    self.frSectionControls.setDisabled(True)
+                    self.frInterviewActions.setDisabled(True)
             else:
+                self.frInterviewActions.setEnabled(True)
                 for row in intvData:
                     sql = "SELECT c.first_name || ' ' || c.last_name as participant FROM "
                     sql += "participants c, interviewees b "
@@ -620,54 +965,45 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.cbInterviewSelection.setCurrentIndex(0)
                 self.pteParticipants.setPlainText(self.intvList[0][2])
                 if self.lmbMode == 'Interview':
-                    self.lwSectionList.clear()
                     self.pbStart.setEnabled(True)
 
     #
-    # update interview info 
+    # select interview 
 
-    def interviewUpdateInfo(self, cIndex):
+    def interviewSelect(self, cIndex):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         #
-        # update interface when an interview is selected
-        if len(self.intvList) > 0:
-            self.pteParticipants.setPlainText(self.intvList[cIndex][2])
-            self.interview_id = self.intvList[cIndex][0]
-            self.interview_code = self.intvList[cIndex][1]
-            if self.lmbMode in ('Interview','Import'):
-                self.mapRemoveInterviewLayers()
-                self.mapAddInterviewLayers()
-            else:
-                self.interviewLoad()
-        else:
+        # remove old interview if loaded
+        if self.lwSectionList.count() > 0:
+            self.interviewUnload()
+        if len(self.intvList) == 0:
             self.interview_id = None
             self.interview_code = ''
             self.pteParticipants.setPlainText('')
-
+            self.tbMediaPlay.setDisabled(True)
+            self.hsSectionMedia.setDisabled(True)
+            self.mediaState = 'disabled'
+        else:
+            self.pteParticipants.setPlainText(self.intvList[cIndex][2])
+            self.interview_id = self.intvList[cIndex][0]
+            self.interview_code = self.intvList[cIndex][1]
+            self.interviewLoad()
+            
     #
     # load interview
 
     def interviewLoad(self):
 
-        self.iface.actionRemoveAllFromOverview().activate(0)
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-#                QgsMessageLog.logMessage('\nLoading Interview')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # get path for audio file and create prefix
+        self.interviewState == 'Load'
         s = QtCore.QSettings()
         dirName = s.value('mapBiographer/projectDir')
         self.afName = os.path.join(dirName, self.interview_code + '.wav')
@@ -679,11 +1015,6 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.tbMediaPlay.setDisabled(True)
             self.hsSectionMedia.setDisabled(True)
             self.mediaState = 'disabled'
-        # remove previous interview
-        if self.interviewState <> 'New':
-            self.interviewState = 'Unload'
-            self.interviewUnload()
-        self.interviewState == 'Load'
         #
         # prepare for new interview
         # reset interview variables
@@ -739,28 +1070,39 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         rs = self.cur.execute(sql)
         rsData = rs.fetchall()
         if rsData[0][0] == None:
-            self.maxCodeNumber = 1
+            self.maxCodeNumber = 0
         else:
             self.maxCodeNumber = rsData[0][0]
-        # enable navigation
-        self.frSectionControls.setEnabled(True)
         # load interview map layers
-        self.mapAddInterviewLayers()
-        # load interview sections and update link list for cbFeatureStatus
+        self.interviewAddMapLayers()
+        # load interview sections and update link list for cbFeatureSource
         sql = "SELECT id, section_code, geom_source, sequence_number FROM interview_sections "
         sql += "WHERE interview_id = %d ORDER BY sequence_number;" % self.interview_id
         rs = self.cur.execute(sql)
         sectionList = rs.fetchall()
-        self.cbFeatureStatus.clear()
-        self.cbFeatureStatus.addItems(['none','unique'])
+        self.cbFeatureSource.clear()
+        self.cbFeatureSource.addItems(['none','unique'])
         self.lwSectionList.clear()
         for section in sectionList:
             self.lwSectionList.addItem(section[1])
             if section[2] in ('pt','ln','pl'):
-                self.cbFeatureStatus.addItem('same as %s' % section[1])
-        self.interviewState = 'View'
+                self.cbFeatureSource.addItem('same as %s' % section[1])
+        # enable navigation
         if len(sectionList) > 0:
+            self.twSectionContent.setEnabled(True)
+            self.lwProjectCodes.setEnabled(True)
             self.lwSectionList.setCurrentItem(self.lwSectionList.item(0))
+        else:
+            self.twSectionContent.setDisabled(True)
+            self.lwProjectCodes.setDisabled(True)
+        # refresh navigator panel
+        self.navigatorPanel.loadLayers()
+        self.interviewState = 'View'
+        if self.lwSectionList.count() > 0:
+            self.lwSectionList.setItemSelected(self.lwSectionList.item(0),True)
+            self.sectionSelect()
+        self.mapToolsActivatePanTool()
+        self.navigatorPanel.zoomToStudyArea()
         
     #
     # unload interview
@@ -769,17 +1111,16 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.interviewState = 'Unload'
+        # clear interface when an interview is selected
+        self.cbFeatureSource.clear()
+        self.cbFeatureSource.addItems(['none','unique'])
         # clear section list
         self.lwSectionList.clear()
         # remove layers if they exist
-        self.mapRemoveInterviewLayers()
+        self.interviewRemoveMapLayers()
 
     #
     # close trancription interface
@@ -788,19 +1129,28 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-#                QgsMessageLog.logMessage('\nClose Transcriber')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
+        # check if audio is playing and stop it
+        if self.mediaState == 'playing':
+            self.audioPlayPause()
         # method body
+        if self.scaleConnection == True:
+            QtCore.QObject.disconnect(self.canvas, QtCore.SIGNAL("scaleChanged(double)"), self.mapToolsScaleNotification)
         # close navigator
-        self.navigatorPanel.close()
+        try:
+            self.navigatorPanel.close()
+        except:
+            pass
         # unload interview
-        self.interviewUnload()
+        try:
+            self.interviewUnload()
+        except:
+            pass
         # disconnect map tools
-        self.mapToolsDisconnect()
+        try:
+            self.mapToolsDisconnect()
+        except:
+            pass
         # close database connection
         if self.conn <> None:
             self.conn.close()
@@ -823,14 +1173,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #
     # add interview map layers in order of polygon, line and point to ensure visibility
 
-    def mapAddInterviewLayers(self):
+    def interviewAddMapLayers(self):
 
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # load layers
         uri = QgsDataSourceURI()
         uri.setDatabase(os.path.join(self.projectDir,self.projectDB))
@@ -853,7 +1199,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         symbolLayer.setBorderWidth(0.6)
         QgsMapLayerRegistry.instance().addMapLayer(self.polygons_layer)
         # add to overview
-        self.iface.actionAddToOverview().activate(0)
+        #self.iface.setActiveLayer(self.polygons_layer)
+        #self.iface.actionAddToOverview().activate(0)
         # set label
         palyrPolygons = QgsPalLayerSettings()
         palyrPolygons.readFromLayer(self.polygons_layer)
@@ -875,7 +1222,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         symbol.setWidth(0.6)
         QgsMapLayerRegistry.instance().addMapLayer(self.lines_layer)
         # add to overview
-        self.iface.actionAddToOverview().activate(0)
+        #self.iface.setActiveLayer(self.lines_layer)
+        #self.iface.actionAddToOverview().activate(0)
         # set label
         palyrLines = QgsPalLayerSettings()
         palyrLines.readFromLayer(self.lines_layer)
@@ -900,7 +1248,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         symbol.setAlpha(0.5)
         QgsMapLayerRegistry.instance().addMapLayer(self.points_layer)
         # add to overview
-        self.iface.actionAddToOverview().activate(0)
+        #self.iface.setActiveLayer(self.points_layer)
+        #self.iface.actionAddToOverview().activate(0)
         # set label
         palyrPoints = QgsPalLayerSettings()
         palyrPoints.readFromLayer(self.points_layer)
@@ -915,26 +1264,23 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.polygons_layer.setDisplayField('section_code')
         self.lines_layer.setDisplayField('section_code')
         self.points_layer.setDisplayField('section_code')
-        # refresh navigator panel
-        self.navigatorPanel.loadLayers()
 
     #
     # remove interview map layers
 
-    def mapRemoveInterviewLayers(self):
+    def interviewRemoveMapLayers(self):
 
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         try:
             lyrs = self.iface.mapCanvas().layers()
             #QgsMessageLog.logMessage('lyr count %d' % len(lyrs))
             for lyr in lyrs:
                 if lyr.name() in ('lmb_points','lmb_lines','lmb_polygons'):
-                    #QgsMessageLog.logMessage('removing: %s ' % str(lyr.name()))
+                    # NOTE: Set active so that another layer does not get removed
+                    #       from overview window when this layer is removed
+                    self.iface.setActiveLayer(lyr)
+                    self.iface.actionAddToOverview().activate(0)
                     QgsMapLayerRegistry.instance().removeMapLayer(lyr.id())
         except:
             pass
@@ -945,17 +1291,41 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #####################################################
 
     #
-    # populate audio device list
+    # audio set start value
 
-    def audioPopulateDeviceList(self):
+    def audioSetStartValue(self):
+
+        if self.featureState <> 'Load':
+            # use debug track order of calls
+            if self.editDebug:
+                QgsMessageLog.logMessage(self.myself())
+            if self.spMediaStart.value() > self.spMediaEnd.value():
+                self.spMediaStart.setValue(self.spMediaEnd.value())
+            if self.pbSaveSection.isEnabled() == False:
+                self.sectionEnableSaveCancel()
+
+    #
+    # audio set end value
+
+    def audioSetEndValue(self):
+
+        if self.featureState <> 'Load':
+            # use debug track order of calls
+            if self.editDebug:
+                QgsMessageLog.logMessage(self.myself())
+            if self.spMediaEnd.value() < self.spMediaStart.value():
+                self.spMediaEnd.setValue(self.spMediaStart.value())
+            if self.pbSaveSection.isEnabled() == False:
+                self.sectionEnableSaveCancel()
+
+    #
+    # load audio device list
+
+    def audioLoadDeviceList(self):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # create array to store info
         self.deviceList = []
@@ -1012,14 +1382,14 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.audioDeviceName = self.deviceList[bestChoice][1]
         if len(self.deviceList) > 0:
             if self.lmbMode == 'Interview':
-                self.setWindowTitle('LMB - (Audio Device: %s) - Recording Disabled' % self.audioDeviceName)
+                self.setWindowTitle('LMB Worker - (Audio: %s) - Recording Disabled' % self.audioDeviceName)
             else:
-                self.setWindowTitle('LMB - (Audio Device: %s)'  % self.audioDeviceName)
+                self.setWindowTitle('LMB Worker - (Audio: %s)'  % self.audioDeviceName)
         else:
             if self.lmbMode == 'Interview':
-                self.setWindowTitle('LMB - (No Audio Device Found) - Recording Disabled')
+                self.setWindowTitle('LMB Worker - (No Audio Found) - Recording Disabled')
             else:
-                self.setWindowTitle('LMB - (No Audio Device Found)')
+                self.setWindowTitle('LMB Worker - (No Audio Found)')
 
     #
     # select audio device for recording or playback
@@ -1028,11 +1398,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.audioDeviceIndex = deviceIndex
         for x in range(len(self.deviceList)):
@@ -1054,11 +1420,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # create worker
         worker = audioPlayer(self.afName,self.audioDeviceIndex,self.audioCurrentPosition,self.audioEndPosition)
@@ -1083,16 +1445,13 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
-        if self.mediaState == 'paused':
-            self.audioStartPlayback()
-        elif self.mediaState == 'playing':
-            self.audioStopPlayback()
+        if self.tbMediaPlay.isEnabled():
+            if self.mediaState == 'paused':
+                self.audioStartPlayback()
+            elif self.mediaState == 'playing':
+                self.audioStopPlayback()
 
     #
     # stop audio playback
@@ -1101,11 +1460,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.worker.kill()           
         self.worker.deleteLater()
@@ -1119,6 +1474,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     def audioUpdateCurrentPosition(self):
 
         self.audioCurrentPosition = self.hsSectionMedia.value()
+        if self.lmbMode in ('Import','Transcribe'):
+            m, s = divmod(self.audioCurrentPosition, 60)
+            h, m = divmod(m, 60)
+            timerText =  "%02d:%02d:%02d" % (h, m, s)
+            self.lblTimer.setText(timerText)
 
     #
     # update audio status during playback
@@ -1127,11 +1487,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         if statusMessage == 'stopped':
             self.tbMediaPlay.setIcon(QtGui.QIcon(":/plugins/mapbiographer/media_play.png"))
@@ -1149,11 +1505,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         if self.cbRecordAudio.currentText() == 'Record Audio':
             # try to enable audio recording
@@ -1251,11 +1603,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         errorMessage = 'Audio thread raised an exception:\n' + format(exception_string)
         QtGui.QMessageBox.critical(self, 'message',
@@ -1277,11 +1625,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # get path for audio file and create prefix
         s = QtCore.QSettings()
@@ -1310,11 +1654,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.worker.stop()           
         self.audioSection += 1
@@ -1330,11 +1670,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         
         # use debug track order of calls
         if self.audioDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.worker.stopNMerge()           
         self.audioSection += 1
@@ -1349,20 +1685,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #####################################################
 
     #
-    # start interview
+    # set interview defaults
 
-    def interviewStart(self):
+    def interviewSetDefaults(self):
 
-        # use debug track order of calls
-        if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-#                QgsMessageLog.logMessage('\nStarting Interview')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
-        # method body
-        #
         # set defaults
         # interview info
         self.startTime = 0
@@ -1377,37 +1703,19 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.section_id = 0
         self.sequence = 0
         self.currentSequence = 0
-        self.currentContentCode = ''
-        self.previousContentCode = ''
+        self.currentPrimaryCode = ''
+        self.previousPrimaryCode = ''
         self.previousSecurity = 'PU'
+        self.previousContentCodes = ''
         self.previousTags = ''
-        self.previousUsePeriod = 'U'
-        self.previousAnnualVariation = 'U'
+        self.previousDateTime = 'U'
+        self.previousTimeOfYear = 'U'
         self.previousNote = ''
         self.currentFeature = 'ns'
         self.selectedCodeCount = 0
+        self.maxCodeNumber = 0
         # set audio section
         self.audioSection = 1
-        # start timer thread
-        self.startTime = time.time()
-        self.lblTimer.setText('00:00:00')
-        # setup clock and timer
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self.timeShow)
-        self.timer.start(1000)
-        self.timeShow()
-        if self.recordAudio == True:
-            # start audio recording
-            self.audioStartRecording()
-        # set main buttons status
-        self.pbStart.setDisabled(True)
-        self.pbPause.setEnabled(True)
-        self.pbFinish.setEnabled(True)
-        # enable section edit controls
-        self.frSectionControls.setEnabled(True)
-        self.frInterviewSelection.setDisabled(True)
-        # set interview state
-        self.interviewState = 'Running'
         # get previous section id
         sql = 'SELECT max(id) FROM interview_sections;'
         rs = self.cur.execute(sql)
@@ -1440,10 +1748,44 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.previousPolygonId = 0
         else:
             self.previousPolygonId = int(rsData[0][0])
-        # create a new section at the start of interview 
-        # to capture introductory remarks
-        self.sectionCreateNonSpatial()
-        
+
+    #
+    # start interview
+
+    def interviewStart(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        # method body
+        self.interviewSetDefaults()
+        #
+        # enable section edit controls
+        self.frSectionControls.setEnabled(True)
+        self.frInterviewSelection.setDisabled(True)
+        if self.cbMode.currentText() == 'Conduct Interview':
+            # start timer thread
+            self.startTime = time.time()
+            self.lblTimer.setText('00:00:00')
+            # setup clock and timer
+            self.timer = QtCore.QTimer(self)
+            self.timer.timeout.connect(self.timeShow)
+            self.timer.start(1000)
+            self.timeShow()
+            if self.recordAudio == True:
+                # start audio recording
+                self.audioStartRecording()
+            # set main buttons status
+            self.pbStart.setDisabled(True)
+            self.pbPause.setEnabled(True)
+            self.pbFinish.setEnabled(True)
+            # set interview state
+            self.interviewState = 'Running'
+            # create a new section at the start of interview 
+            # to capture introductory remarks
+            self.sectionCreateNonSpatial()
+            self.mapToolsScaleNotification()
+
     #
     # pause and start interview
 
@@ -1451,11 +1793,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # change label and action if running or paused
         if self.interviewState == 'Running':
@@ -1493,12 +1831,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.basicDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-#                QgsMessageLog.logMessage('\nFinishing Interview')
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # set state
         self.copyPrevious = False
@@ -1508,41 +1841,50 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # reset tools
         self.canvas.unsetMapTool(self.canvas.mapTool())
         # clean up
-        # stop timer
-        self.timer.stop()
-        self.endTime = time.time()
-        self.interviewLength = self.lblTimer.text()
-        if self.recordAudio == True:
-            # stop audio recording and consolidate recordings
-            self.audioStopConsolidate()
-        # adjust interface
-        # disable
-        self.cbRecordAudio.setCurrentIndex(0)
-        # disable pause and finish
-        self.pbFinish.setDisabled(True)
-        self.pbPause.setDisabled(True)
-        # get last media_end_time value
-        sql = "SELECT max(id) FROM interview_sections "
-        sql += "WHERE interview_id = %d;" % self.interview_id
-        rs = self.cur.execute(sql)
-        secId = rs.fetchall()[0]
-        # udate last media_end_time value
-        sql = "UPDATE interview_sections "
-        sql += "SET media_end_time = '%s' " % self.interviewLength
-        sql += "WHERE id = %d and " % secId
-        sql += "interview_id = %d; " % self.interview_id
-        self.cur.execute(sql)
-        # update interview record
-        startString = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.startTime))
-        endString = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.endTime))
-        sql = "UPDATE interviews SET "
-        sql += "start_datetime = '%s', " % startString
-        sql += "end_datetime = '%s', " % endString
-        sql += "date_modified = '%s', " % endString[:-6]
-        sql += "data_status = 'RC' "
-        sql += "WHERE id = %d; " % self.interview_id
-        self.cur.execute(sql)
-        self.conn.commit()
+        if self.cbMode.currentText() == 'Conduct Interview':
+            # disable pause and finish
+            self.pbFinish.setDisabled(True)
+            self.pbPause.setDisabled(True)
+            # stop timer
+            self.timer.stop()
+            self.endTime = time.time()
+            self.interviewLength = self.lblTimer.text()
+            if self.recordAudio == True:
+                # stop audio recording and consolidate recordings
+                self.audioStopConsolidate()
+            # adjust interface
+            # disable
+            self.cbRecordAudio.setCurrentIndex(0)
+            # get last media_end_time value
+            sql = "SELECT max(id) FROM interview_sections "
+            sql += "WHERE interview_id = %d;" % self.interview_id
+            rs = self.cur.execute(sql)
+            secId = rs.fetchall()[0]
+            # udate last media_end_time value
+            sql = "UPDATE interview_sections "
+            sql += "SET media_end_time = '%s' " % self.interviewLength
+            sql += "WHERE id = %d and " % secId
+            sql += "interview_id = %d; " % self.interview_id
+            self.cur.execute(sql)
+            # update interview record
+            startString = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.startTime))
+            endString = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.endTime))
+            sql = "UPDATE interviews SET "
+            sql += "start_datetime = '%s', " % startString
+            sql += "end_datetime = '%s', " % endString
+            sql += "date_modified = '%s', " % endString[:-6]
+            sql += "data_status = 'RC' "
+            sql += "WHERE id = %d; " % self.interview_id
+            self.cur.execute(sql)
+            self.conn.commit()
+        elif self.cbMode.currentText() == 'Import Interview':
+            sql = "UPDATE interviews SET "
+            sql += "data_status = 'RC' "
+            sql += "WHERE id = %d; " % self.interview_id
+            self.cur.execute(sql)
+            self.conn.commit()
+            self.tbEdit.setDisabled(True)
+            self.tbMove.setDisabled(True)
         # disable interview
         self.frSectionControls.setDisabled(True)
         # enable close button
@@ -1550,7 +1892,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # clear interview
         self.interviewUnload()
         # update interview list
-        self.interviewPopulateList()
+        self.interviewLoadList()
         
         
 
@@ -1565,26 +1907,22 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         if self.pbSaveSection.isEnabled() == False and \
         ( (self.interviewState == 'View' and self.featureState == 'View') or \
-        (self.interviewState == 'Running' and self.featureState <> 'Load') ):
+          (self.interviewState == 'Running' and self.featureState <> 'Load') ):
             # use debug track order of calls
             if self.editDebug:
-                if self.debugLog == True:
-                    QgsMessageLog.logMessage(self.myself())
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
+                QgsMessageLog.logMessage(self.myself())
             # method body
             # prevent section from being changed
             self.lwSectionList.setDisabled(True)
+            if self.interviewState <> 'Running':
+                self.frInterviewSelection.setDisabled(True)
             # enable save and cancel
             self.pbSaveSection.setEnabled(True)
             self.pbCancelSection.setEnabled(True)
             self.pbDeleteSection.setEnabled(True)
             if self.lmbMode == 'Interview':
                 # disable map tools
-                self.tbPoint.setDisabled(True)
-                self.tbLine.setDisabled(True)
-                self.tbPolygon.setDisabled(True)
+                self.mapToolsDisableDrawing()
                 # disable finish and pause
                 self.pbPause.setDisabled(True)
                 self.pbFinish.setDisabled(True)
@@ -1601,28 +1939,26 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         if self.interviewState in ('View','Running'):
             # use debug track order of calls
             if self.editDebug:
-                if self.debugLog == True:
-                    QgsMessageLog.logMessage(self.myself())
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
+                QgsMessageLog.logMessage(self.myself())
             # method body
             # prevent section from being changed
             self.lwSectionList.setDisabled(True)
+            if self.interviewState <> 'Running':
+                self.frInterviewSelection.setDisabled(True)
             self.pbCancelSection.setEnabled(True)
             if self.lmbMode == 'Interview':
                 if enableSave == True:
                     self.pbSaveSection.setEnabled(True)
-                    # disable map tools
-                    self.tbPoint.setDisabled(True)
-                    self.tbLine.setDisabled(True)
-                    self.tbPolygon.setDisabled(True)
+                    # disable drawing map tools
+                    self.mapToolsDisableDrawing()
                 else:
                     self.pbSaveSection.setDisabled(True)
-                    # enable map tools
-                    self.tbPoint.setEnabled(True)
-                    self.tbLine.setEnabled(True)
-                    self.tbPolygon.setEnabled(True)
+                    # enable drawing map tools
+                    if self.lmbMode == 'Interview':
+                        if self.mapToolsScaleOK():
+                            self.mapToolsEnableDrawing()
+                    else:
+                        self.mapToolsEnableDrawing()                
                 # disable finish and pause
                 self.pbPause.setDisabled(True)
                 self.pbFinish.setDisabled(True)
@@ -1633,8 +1969,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                     self.pbSaveSection.setDisabled(True)
             self.pbDeleteSection.setDisabled(True)
             # enable move and edit
-            self.tbMove.setEnabled(True)
-            self.tbEdit.setEnabled(True)
+            if self.lmbMode == 'Interview':
+                if self.mapToolsScaleOK():
+                    self.mapToolsEnableEditing()
+            else:
+                self.mapToolsEnableEditing()                
             self.tbNonSpatial.setDisabled(True)
 
     #
@@ -1645,23 +1984,21 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         if self.interviewState in ('View','Running'):
             # use debug track order of calls
             if self.editDebug:
-                if self.debugLog == True:
-                    QgsMessageLog.logMessage(self.myself())
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself() + self.featureState, QtGui.QMessageBox.Ok)
+                QgsMessageLog.logMessage(self.myself())
             # method body
             # allow section from being changed
             self.lwSectionList.setEnabled(True)
+            if self.interviewState <> 'Running':
+                self.frInterviewSelection.setEnabled(True)
             # disable save and cancel
             self.pbSaveSection.setDisabled(True)
             self.pbCancelSection.setDisabled(True)
             self.pbDeleteSection.setEnabled(True)
             if self.lmbMode == 'Interview':
-                # enable map tools
-                self.tbPoint.setEnabled(True)
-                self.tbLine.setEnabled(True)
-                self.tbPolygon.setEnabled(True)
+                if self.mapToolsScaleOK():
+                    self.mapToolsEnableDrawing()
+                else:
+                    self.mapToolsDisableDrawing()
                 self.tbNonSpatial.setEnabled(True)
                 # enable finish and pause
                 self.pbPause.setEnabled(True)
@@ -1669,6 +2006,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             else:
                 # enable new section tool
                 self.tbNonSpatial.setEnabled(True)
+                # disable spatial tools because not in interview mode
+                self.mapToolsDisableDrawing()
             # adjust state
             if self.featureState == 'Edit':
                 self.featureState = 'View'
@@ -1679,17 +2018,142 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #####################################################
 
     #
+    # section move up
+
+    def sectionMoveUp(self):
+
+        self.interviewState = 'Import'
+        # get current record sequence value
+        cSeqVal = self.currentSequence
+        nSeqVal = cSeqVal - 1
+        # set current item to sequence value minus 1
+        sql = "UPDATE interview_sections "
+        sql += "SET sequence_number = %d " % nSeqVal
+        sql += "WHERE interview_id = %d AND id = '%s' " % (self.interview_id, self.section_id)
+        self.cur.execute(sql)
+        # select previous item to get section code
+        self.lwSectionList.setCurrentRow(self.lwSectionList.currentRow()-1)
+        prevSecCode = self.lwSectionList.currentItem().text()        
+        # increment new records sequence value
+        sql = "UPDATE interview_sections "
+        sql += "SET sequence_number = %d " % cSeqVal
+        sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, prevSecCode)
+        self.cur.execute(sql)
+        self.conn.commit()
+        # move previous item down in list in interface
+        currentRow = self.lwSectionList.currentRow()
+        currentItem = self.lwSectionList.takeItem(currentRow)
+        self.lwSectionList.insertItem(currentRow + 1, currentItem)
+        self.currentSequence = nSeqVal
+        self.interviewState = 'View'
+        self.setSectionSortButtons()
+
+    #
+    # section move down
+
+    def sectionMoveDown(self):
+
+        self.interviewState = 'Import'
+        startRow = self.lwSectionList.currentRow()
+        # get current record sequence value
+        cSeqVal = self.currentSequence
+        nSeqVal = cSeqVal + 1
+        # set current item to sequence value plus 1
+        sql = "UPDATE interview_sections "
+        sql += "SET sequence_number = %d " % nSeqVal
+        sql += "WHERE interview_id = %d AND id = '%s' " % (self.interview_id, self.section_id)
+        self.cur.execute(sql)
+        # select next item to get section code
+        self.lwSectionList.setCurrentRow(self.lwSectionList.currentRow()+1)
+        nextSecCode = self.lwSectionList.currentItem().text()        
+        # increment new records sequence value
+        sql = "UPDATE interview_sections "
+        sql += "SET sequence_number = %d " % cSeqVal
+        sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, nextSecCode)
+        self.cur.execute(sql)
+        self.conn.commit()
+        # move previous item down in list in interface
+        currentRow = self.lwSectionList.currentRow()
+        currentItem = self.lwSectionList.takeItem(currentRow)
+        self.lwSectionList.insertItem(currentRow - 1, currentItem)
+        self.currentSequence = nSeqVal
+        # reset selection
+        endRow = self.lwSectionList.currentRow()
+        # if the difference is two spots, then in the middle of list and need to
+        # to move back one. if at end of list difference will be one and no shift
+        # needed
+        if endRow - startRow == 2:
+            self.lwSectionList.setCurrentRow(self.lwSectionList.currentRow()-1)
+        self.interviewState = 'View'
+        self.setSectionSortButtons()
+
+    #
+    # section renumber
+
+    def sectionRenumber(self):
+
+
+        questionText = "This will renumber all sections. This can not be reversed. "
+        questionText = "Are you sure you want to do this?"
+        response = QtGui.QMessageBox.information(self, 'Renumber features',
+                    questionText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+        if response == QtGui.QMessageBox.Yes:
+            QgsMessageLog.logMessage('renumbering')
+            # renumber interview_sections
+            # get current id, and content codes ordered by sequence
+            sql = "SELECT id, primary_code, sequence_number, geom_source, section_code "
+            sql += "FROM interview_sections "
+            sql += "WHERE interview_id = %d ORDER by sequence_number " % self.interview_id
+            rs = self.cur.execute(sql)
+            intvInfo = rs.fetchall()
+            x = 1
+            progNotice = QtGui.QProgressDialog()
+            progNotice.setWindowTitle("Renumbering sections")
+            progNotice.setCancelButton(None)
+            progNotice.show()
+            for rec in intvInfo:
+                progNotice.setValue(float(x)/float(len(intvInfo)))
+                newSecCode = "%s%04d" % (rec[1],x)
+                sql = "UPDATE interview_sections SET "
+                sql += "sequence_number = %d, " % x
+                sql += "section_code = '%s' " % newSecCode
+                sql += "WHERE interview_id = %d and id = %d" % (self.interview_id, rec[0])
+                self.cur.execute(sql)
+                # update references to this section in interview_sections
+                sql = "UPDATE interview_sections "
+                sql += "SET geom_source = '%s' " % newSecCode
+                sql += "WHERE interview_id = %d AND geom_source = '%s';" % (self.interview_id, rec[4])
+                self.cur.execute(sql)
+                # update references to this section in geographic tables
+                if rec[3] == 'pt':
+                    sql = "UPDATE points SET "
+                    sql += "section_code = '%s', content_code = '%s' " % (newSecCode, rec[1])
+                    sql += "WHERE section_id = %d;" % rec[0]
+                elif rec[3] == 'ln':
+                    sql = "UPDATE lines SET "
+                    sql += "section_code = '%s', content_code = '%s' " % (newSecCode, rec[1])
+                    sql += "WHERE section_id = %d;" % rec[0]
+                elif rec[3] == 'pl':
+                    sql = "UPDATE polygons SET "
+                    sql += "section_code = '%s', content_code = '%s' " % (newSecCode, rec[1])
+                    sql += "WHERE section_id = %d;" % rec[0]
+                if rec[3] in ('pt','ln','pl'):
+                    self.cur.execute(sql)
+                self.conn.commit()
+                x += 1
+            progNotice.setValue(100.0)
+            self.interviewUnload()
+            self.interviewLoad()
+            progNotice.hide()
+        
+    #
     # create non-spatial section
 
     def sectionCreateNonSpatial(self):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.currentFeature = 'ns'
         #self.activatePanTool()
@@ -1710,12 +2174,13 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
+        # check if feauture tab widget and project codes are disabled and if so
+        # enabled them
+        if self.lwProjectCodes.isEnabled() == False:
+            self.lwProjectCodes.setEnabled(True)
+            self.twSectionContent.setEnabled(True)
         # set state
         self.featureState = 'Create'
         # set date information
@@ -1723,7 +2188,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.section_date_modified = self.section_date_created
         if self.lmbMode <> 'Interview':
             # set media times for new section and update media time for existing section
-            media_start_time = self.seconds2timeString(self.audioEndPosition-1)
+            if self.audioEndPosition > 1:
+                media_start_time = self.seconds2timeString(self.audioEndPosition-1)
+            else:
+                media_start_time = self.seconds2timeString(self.audioEndPosition)
             media_end_time = self.seconds2timeString(self.audioEndPosition)
             sql = "UPDATE interview_sections "
             sql += 'SET media_end_time = "%s" ' % media_start_time
@@ -1737,19 +2205,28 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         if self.lmbMode == 'Interview':
             if self.copyPrevious == True:
                 # copy previous record
-                self.currentContentCode = self.previousContentCode
+                self.currentPrimaryCode = self.previousPrimaryCode
                 data_security = self.previousSecurity
+                content_codes = self.previousContentCodes
                 tags = self.previousTags
-                use_period = self.previousUsePeriod
-                annual_variation = self.previousAnnualVariation
+                date_time = self.previousDateTime
+                time_of_year = self.previousTimeOfYear
                 note = self.previousNote
             else:
                 # create new record
-                self.currentContentCode = "S"
+                if self.currentFeature == 'pt':
+                    self.currentPrimaryCode = self.pointCode
+                elif self.currentFeature == 'ln':
+                    self.currentPrimaryCode = self.lineCode
+                elif self.currentFeature == 'pl':
+                    self.currentPrimaryCode = self.polygonCode
+                else:
+                    self.currentPrimaryCode = self.defaultCode
                 data_security = 'PU'
-                tags = 'S'
-                use_period = 'U'
-                annual_variation = 'U'
+                content_codes = self.currentPrimaryCode
+                tags = ''
+                date_time = 'U'
+                time_of_year = 'U'
                 note = ''
             # update previous records media_end_time value
             media_start_time = self.lblTimer.text()
@@ -1763,14 +2240,22 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             # add new record
             self.sequence += 1
             self.currentSequence = self.sequence
-            self.currentSectionCode = '%s%04d' % (self.currentContentCode,self.currentSequence)
+            self.currentSectionCode = '%s%04d' % (self.currentPrimaryCode,self.currentSequence)
         else:
             # create new record
-            self.currentContentCode = "S"
+            if self.currentFeature == 'pt':
+                self.currentPrimaryCode = self.pointCode
+            elif self.currentFeature == 'ln':
+                self.currentPrimaryCode = self.lineCode
+            elif self.currentFeature == 'pl':
+                self.currentPrimaryCode = self.polygonCode
+            else:
+                self.currentPrimaryCode = self.defaultCode
             data_security = 'PU'
-            tags = 'S'
-            use_period = 'U'
-            annual_variation = 'U'
+            content_codes = self.currentPrimaryCode
+            tags = ''
+            date_time = 'U'
+            time_of_year = 'U'
             note = ''
             # insert a new record after the current one
             newSequence = self.currentSequence + 1
@@ -1782,27 +2267,29 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.cur.execute(sql)
             #self.conn.commit()
             self.maxCodeNumber += 1
-            self.currentSectionCode = '%s%04d' % (self.currentContentCode,self.maxCodeNumber)
+            self.currentSectionCode = '%s%04d' % (self.currentPrimaryCode,self.maxCodeNumber)
             self.currentCodeNumber = self.maxCodeNumber
             self.currentSequence = newSequence
         sql = 'INSERT INTO interview_sections (id, interview_id, sequence_number, '
-        sql += 'content_code, section_code, note, use_period, annual_variation, '
-        sql += 'spatial_data_source, geom_source, tags, media_start_time, media_end_time, '
+        sql += 'primary_code, section_code, note, date_time, time_of_year, '
+        sql += 'spatial_data_source, geom_source, content_codes, tags, media_start_time, media_end_time, '
         sql += 'data_security, date_created, date_modified) VALUES '
         sql += '(%d,%d,' % (self.section_id, self.interview_id)
-        sql += '%d,"%s","%s","%s",' % (self.currentSequence, self.currentContentCode, self.currentSectionCode, note)
-        sql += '"%s","%s","%s",' % (use_period, annual_variation, spatial_data_source)
-        sql += '"%s","%s","%s","%s","%s",' % (self.currentFeature,tags,media_start_time,media_end_time,data_security)
+        sql += '%d,"%s","%s","%s",' % (self.currentSequence, self.currentPrimaryCode, self.currentSectionCode, note)
+        sql += '"%s","%s","%s",' % (date_time, time_of_year, spatial_data_source)
+        sql += '"%s","%s","%s","%s","%s","%s",' % (self.currentFeature,content_codes,tags,media_start_time,media_end_time,data_security)
         sql += '"%s","%s");' % (self.section_date_created, self.section_date_modified)
         self.cur.execute(sql)
         #self.conn.commit()
         # set defaults
-        self.previousContentCode = self.currentContentCode 
+        self.previousPrimarytCode = self.currentPrimaryCode 
         self.previousSecurity = data_security
+        self.previousContentCodes = content_codes
         self.previousTags = tags
-        self.previousUsePeriod = use_period
-        self.previousAnnualVariation = annual_variation
+        self.previousDateTime = date_time
+        self.previousTimeOfYear = time_of_year
         self.previousNote = note
+        self.currentMediaFiles = ''
         
     #
     # add section record to list widget - called after a section is fully created
@@ -1811,25 +2298,21 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
-        # clear selected tags
+        # clear selected codes
         selectedItems = self.lwProjectCodes.selectedItems()
         for item in selectedItems:
             self.lwProjectCodes.setItemSelected(item,False)
-        if self.lmbMode == 'Interview':
+        if self.lmbMode in ('Interview','Import'):
             # add  to end of list and select it in section list
             self.lwSectionList.addItem(self.currentSectionCode)
             self.lwSectionList.setCurrentRow(self.lwSectionList.count()-1)
             # add new section to feature status control
             if self.currentFeature in ('pt','ln','pl'):
-                idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+                idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
                 if idx == -1:
-                    self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+                    self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
         else:
             # insert into section list after current item and select it
             self.lwSectionList.insertItem(self.lwSectionList.currentRow()+1,self.currentSectionCode)
@@ -1843,11 +2326,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.editLayer.selectAll()
         feat2 = self.editLayer.selectedFeatures()[0]
@@ -1893,11 +2372,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # delete spatial records
         if oldGeomSource == 'pt':
@@ -1919,11 +2394,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         sql = "SELECT geom_source FROM interview_sections "
         sql += "WHERE interview_id = %d and section_code = '%s' " % (self.interview_id, referencedCode)
@@ -1945,7 +2416,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql = "INSERT INTO points "
             sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
             sql += "VALUES (%d,%d,%d, " % (self.point_id, self.interview_id, self.section_id)
-            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
             sql += "GeomFromText('%s',3857));" % oldFeat.geometry().exportToWkt()
             self.cur.execute(sql)
             currentGeomSource = 'pt'
@@ -1964,7 +2435,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql = "INSERT INTO lines "
             sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
             sql += "VALUES (%d,%d,%d, " % (self.line_id, self.interview_id, self.section_id)
-            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
             sql += "GeomFromText('%s',3857));" % oldFeat.geometry().exportToWkt()
             self.cur.execute(sql)
             currentGeomSource = 'ln'
@@ -1983,7 +2454,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql = "INSERT INTO polygons "
             sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
             sql += "VALUES (%d,%d,%d, " % (self.polygon_id, self.interview_id, self.section_id)
-            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+            sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
             sql += "GeomFromText('%s',3857));" % oldFeat.geometry().exportToWkt()
             self.cur.execute(sql)
             currentGeomSource = 'pl'
@@ -1998,17 +2469,13 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # change interface to reflect completion of editing
         self.sectionDisableSaveCancel()
         # set codes for SQL
-        self.currentContentCode = self.leCode.text()
-        sectionCode = '%s%04d' % (self.currentContentCode,self.currentCodeNumber)
+        self.currentPrimaryCode = self.leCode.text()
+        sectionCode = '%s%04d' % (self.currentPrimaryCode,self.currentCodeNumber)
         currentGeomSource = self.currentFeature
         sql = "SELECT geom_source FROM interview_sections "
         sql += "WHERE interview_id = %d and section_code = '%s' " % (self.interview_id, self.currentSectionCode)
@@ -2026,10 +2493,12 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             selectNew = True
             self.sectionUpdateMapFeature()
             if self.featureState == 'Add Spatial':
-                self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+                idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+                if idx == -1:
+                    self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
         #
         # case 2 - spatial to non-spatial
-        elif oldGeomSource in ('pt','ln','pl') and self.cbFeatureStatus.currentIndex() == 0:
+        elif oldGeomSource in ('pt','ln','pl') and self.cbFeatureSource.currentIndex() == 0:
             # check if it is referenced
             sql = "SELECT count(*) FROM interview_sections "
             sql += "WHERE interview_id = %d AND geom_source = '%s' " % (self.interview_id, self.currentSectionCode)
@@ -2051,14 +2520,15 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.sectionDeleteMapFeature(oldGeomSource)
                 currentGeomSource = 'ns'
                 self.currentFeature = 'ns'
-                idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+                idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
                 if idx > -1:
-                    self.cbFeatureStatus.removeItem(idx)
+                    self.cbFeatureSource.removeItem(idx)
             else:
+                self.sectionLoadRecord()
                 return
         #
         # case 3 - spatial to link
-        elif oldGeomSource in ('pt','ln','pl') and self.cbFeatureStatus.currentIndex() > 1:
+        elif oldGeomSource in ('pt','ln','pl') and self.cbFeatureSource.currentIndex() > 1:
             # check if it is referenced
             sql = "SELECT count(*) FROM interview_sections "
             sql += "WHERE interview_id = %d AND geom_source = '%s' " % (self.interview_id, self.currentSectionCode)
@@ -2070,7 +2540,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 QtGui.QMessageBox.warning(self, 'User Error',
                         mText, QtGui.QMessageBox.Ok)
                 return
-            referencedCode = self.cbFeatureStatus.currentText()[8:]
+            referencedCode = self.cbFeatureSource.currentText()[8:]
             questionText = "You have selected to remove the spatial feature associated with %s " % self.currentSectionCode
             questionText += "and reference %s instead. Are you sure you want to do this?" % referencedCode
             response = QtGui.QMessageBox.information(self, 'Deleting spatial feature',
@@ -2081,34 +2551,35 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.sectionDeleteMapFeature(oldGeomSource)
                 currentGeomSource = referencedCode
                 self.currentFeature = 'rf'
-                idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+                idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
                 if idx > -1:
-                    self.cbFeatureStatus.removeItem(idx)
+                    self.cbFeatureSource.removeItem(idx)
             else:
+                self.sectionLoadRecord()
                 return
         #
         # case 4 - non-spatial to link
-        elif oldGeomSource == 'ns' and self.cbFeatureStatus.currentIndex() > 1:
+        elif oldGeomSource == 'ns' and self.cbFeatureSource.currentIndex() > 1:
             deselectOld = True
             selectNew = True
-            referencedCode = self.cbFeatureStatus.currentText()[8:]
+            referencedCode = self.cbFeatureSource.currentText()[8:]
             currentGeomSource = referencedCode
         #
         # case 5 - linked to non-spatial
-        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureStatus.currentIndex() == 0:
+        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureSource.currentIndex() == 0:
             deselectOld = True
             currentGeomSource = 'ns'
             self.currentFeature = 'ns'          
         #
         # case 6 - link to different link
-        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureStatus.currentIndex() > 1:
+        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureSource.currentIndex() > 1:
             deselectOld = True
             selectNew = True
-            referencedCode = self.cbFeatureStatus.currentText()[8:]
+            referencedCode = self.cbFeatureSource.currentText()[8:]
             currentGeomSource = referencedCode
         #
         # case 7 - link to spatial
-        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureStatus.currentIndex() == 1:
+        elif not oldGeomSource in ('pt','ln','pl','ns') and self.cbFeatureSource.currentIndex() == 1:
             referencedCode = oldGeomSource
             questionText = 'You have set this feature as unique and separate from the previously referenced section %s.' % referencedCode
             questionText += 'The geometry from %s will be copied to this section for editing. ' % referencedCode
@@ -2116,6 +2587,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             response = QtGui.QMessageBox.information(self, 'Spatial Feature Changed',
                 questionText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
             if response == QtGui.QMessageBox.No:
+                self.sectionLoadRecord()
                 return
             else:
                 # may not be good idea here
@@ -2127,11 +2599,11 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # check for changes to section code
         if sectionCode <>  self.currentSectionCode:
             # update section list
-            self.previousContentCode = self.currentContentCode
-            self.sectionUpdateCode(sectionCode, self.currentContentCode)
-            lstIdx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+            self.previousPrimaryCode = self.currentPrimaryCode
+            self.sectionUpdateCode(sectionCode, self.currentPrimaryCode)
+            lstIdx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
             if lstIdx <> -1:
-                self.cbFeatureStatus.setItemText(lstIdx, 'same as %s' % sectionCode)
+                self.cbFeatureSource.setItemText(lstIdx, 'same as %s' % sectionCode)
             self.lwSectionList.currentItem().setText(sectionCode)
         if self.lmbMode <> 'Interview':
             # now check for changes to media start and end times
@@ -2141,10 +2613,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             if self.audioStartPosition <> self.spMediaStart.value() and \
             self.lwSectionList.currentRow() <> 0:
                 # determine precending section
-                precendingSectionCode = self.lwSectionList.item(self.lwSectionList.currentRow()-1).text()
+                precedingSectionCode = self.lwSectionList.item(self.lwSectionList.currentRow()-1).text()
                 sql = "UPDATE interview_sections "
                 sql += 'SET media_end_time = "%s" ' % media_start_time
-                sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, precendingSectionCode)
+                sql += "WHERE interview_id = %d AND section_code = '%s' " % (self.interview_id, precedingSectionCode)
                 self.cur.execute(sql)
                 self.audioStartPosition = self.timeString2seconds(media_start_time)
                 self.hsSectionMedia.setMinimum(self.audioStartPosition)
@@ -2161,24 +2633,27 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.hsSectionMedia.setMaximum(self.audioEndPosition)
                 self.hsSectionMedia.setValue(self.audioStartPosition)
         # update section table
-        self.previousSecurity = self.default_security[self.cbSectionSecurity.currentIndex()]
-        self.previousTags = self.pteTags.document().toPlainText()
-        self.previousUsePeriod = self.default_time_periods[self.cbTimePeriod.currentIndex()]
-        self.previousAnnualVariation = self.default_annual_variation[self.cbAnnualVariation.currentIndex()]
+        self.previousSecurity = self.project_security[self.cbSectionSecurity.currentIndex()]
+        self.previousContentCodes = self.pteContentCodes.document().toPlainText()
+        self.previousTags = self.pteSectionTags.document().toPlainText()
+        self.previousDateTime = self.project_date_time[self.cbDateTime.currentIndex()]
+        self.previousTimeOfYear = self.project_time_of_year[self.cbTimeOfYear.currentIndex()]
         self.previousNote = self.pteSectionNote.document().toPlainText().replace("'","''")
         self.previousText = self.pteSectionText.document().toPlainText().replace("'","''")
         self.section_date_modified = datetime.datetime.now().isoformat()[:10]
         sql = 'UPDATE interview_sections SET '
-        sql += "content_code = '%s', " % self.currentContentCode
+        sql += "primary_code = '%s', " % self.currentPrimaryCode
         sql += "section_code = '%s', " % sectionCode
         sql += "data_security = '%s', " % self.previousSecurity
         sql += "geom_source = '%s', " % currentGeomSource
+        sql += "content_codes = '%s', " % self.previousContentCodes
         sql += "tags = '%s', " % self.previousTags
-        sql += "use_period = '%s', " % self.previousUsePeriod
-        sql += "annual_variation = '%s', " % self.previousAnnualVariation
+        sql += "date_time = '%s', " % self.previousDateTime
+        sql += "time_of_year = '%s', " % self.previousTimeOfYear
         sql += "note = '%s', " % self.previousNote
         sql += "section_text = '%s', " % self.previousText
-        if self.lmbMode == 'Transcribe':
+        sql += "media_files = '%s', " % self.currentMediaFiles
+        if self.lmbMode in ('Transcribe','Import'):
             sql += "media_start_time = '%s', " % media_start_time
             sql += "media_end_time = '%s', " % media_end_time
         sql += "date_modified = '%s' " % self.section_date_modified
@@ -2214,11 +2689,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself() + self.featureState, QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # cancel edits in a variety of spatial cases
         if self.featureState == 'Add Spatial':
@@ -2243,7 +2714,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.points_layer.deselect(self.points_layer.selectedFeaturesIds())
             self.lines_layer.deselect(self.lines_layer.selectedFeaturesIds())
             self.polygons_layer.deselect(self.polygons_layer.selectedFeaturesIds())
-            self.cbFeatureStatus.setCurrentIndex(0)
+            self.cbFeatureSource.setCurrentIndex(0)
             self.vectorEditing = False
             # no need to reload as other changes already saved
         elif self.lmbMode == 'Interview' and self.featureState == 'Create':
@@ -2259,6 +2730,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.cur.execute(sql)
             self.conn.commit()
             self.vectorEditing = False
+            self.section_id = self.section_id - 1
+            self.previousSectionId = self.previousSectionId - 1
+            self.sequence = self.sequence - 1
             # don't reload as record deleted and old record still highlighted
         elif self.vectorEditing == True:
             # if vector edting, abandon changes
@@ -2282,11 +2756,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # prevent deletion if this section is referenced by another section
         sql = "SELECT count(*) FROM interview_sections "
@@ -2305,12 +2775,12 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
            messageText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
         if response == QtGui.QMessageBox.Yes:
             # check if spatial and remove for spatial feature reference combobox
-            idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+            idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
             if idx > -1:
-                self.cbFeatureStatus.removeItem(idx)
+                self.cbFeatureSource.removeItem(idx)
             # check if last section as adjust time index of precending section if needed
             if self.lwSectionList.currentRow()+1 == self.lwSectionList.count():
-                pIdx = self.lwSectionList.currentRow()-1
+                pIdx = self.lwSectionList.currentRow()
                 pSCode = self.lwSectionList.item(pIdx).text()
                 sql = "UPDATE interview_sections "
                 sql += "SET media_end_time = '%s' " % self.seconds2timeString(self.spMediaEnd.value())
@@ -2334,6 +2804,21 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.conn.commit()
             # remove from section list
             self.lwSectionList.takeItem(self.lwSectionList.currentRow())
+            #
+            # adjust count variables so that sequence ordering is not lost
+            # if the last item on the list is deleted. This will not affect deletions
+            # in the middle of a sequence
+            #
+            sql = 'SELECT max(sequence_number) FROM interview_sections '
+            sql += 'WHERE interview_id = %d ' % self.interview_id
+            rs = self.cur.execute(sql)
+            rsData = rs.fetchall()
+            if rsData[0][0] == None:
+                self.maxCodeNumber = 0
+            else:
+                self.maxCodeNumber = rsData[0][0]
+            if self.lmbMode == 'Interview':
+                self.sequence = self.maxCodeNumber
         # reset interface
         self.sectionDisableSaveCancel()
         # refresh view
@@ -2354,6 +2839,10 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.editLayer.commitChanges()
             QgsMapLayerRegistry.instance().removeMapLayer(self.editLayer.id())
             self.mapToolsActivatePanTool()
+        # check if there are valid sections
+        if self.lwSectionList.count() == 0:
+            self.lwProjectCodes.setDisabled(True)
+            self.twSectionContent.setDisabled(True)
         
 
     #####################################################
@@ -2374,20 +2863,14 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             
         # determine nature of current feature and select
         if self.lwSectionList.currentItem() <> None and \
-        ( (self.lmbMode in ('Import','Transcribe') and \
-        self.interviewState == 'View') or \
-        (self.lmbMode == 'Interview' and self.interviewState == 'Running') ):
+        ( (self.lmbMode in ('Import','Transcribe') and self.interviewState == 'View') or \
+          (self.lmbMode == 'Interview' and self.interviewState == 'Running') ):
             if self.lmbMode in ('Import','Transcribe') and \
             self.mediaState == 'playing':
-                self.playPauseMedia()
+                self.audioPlayPause()
             # use debug track order of calls
             if self.editDebug:
-                if self.debugLog == True:
-                    QgsMessageLog.logMessage(self.myself())
-#                    QgsMessageLog.logMessage('\nSelect Feature')
-                else:
-                    QtGui.QMessageBox.warning(self, 'DEBUG',
-                        self.myself(), QtGui.QMessageBox.Ok)
+                QgsMessageLog.logMessage(self.myself())
             self.featureState = 'Select'
             # deselect other features
             self.points_layer.deselect(self.points_layer.selectedFeaturesIds())
@@ -2398,9 +2881,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.currentSectionCode = self.lwSectionList.currentItem().text()
             self.currentCodeNumber = int(re.sub(r'[\D+]','',self.currentSectionCode))
             # get the section data
-            sql = "SELECT id, sequence_number, content_code, data_security, "
-            sql += "geom_source, tags, use_period, annual_variation, note, "
-            sql += "media_start_time, media_end_time, section_text "
+            sql = "SELECT id, sequence_number, primary_code, data_security, "
+            sql += "geom_source, content_codes, tags, date_time, time_of_year, note, "
+            sql += "media_start_time, media_end_time, section_text, media_files "
             sql += "FROM interview_sections WHERE "
             sql += "interview_id = %d AND section_code = '%s';" % (self.interview_id, self.currentSectionCode)
             rs = self.cur.execute(sql)
@@ -2489,7 +2972,28 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 # disable spatial editing if no feature or referenced feature
                 self.tbEdit.setDisabled(True)
                 self.tbMove.setDisabled(True)
+            # for import mode allow reordering of sections
+            self.setSectionSortButtons()
 
+    #
+    # enable / disable section sort buttons
+
+    def setSectionSortButtons(self):
+        
+        if self.lmbMode == 'Import':
+            minRow = 0
+            maxRow = self.lwSectionList.count() - 1
+            row = self.lwSectionList.currentRow()
+            if row == maxRow:
+                self.tbMoveUp.setEnabled(True)
+                self.tbMoveDown.setDisabled(True)
+            elif row == minRow:
+                self.tbMoveUp.setDisabled(True)
+                self.tbMoveDown.setEnabled(True)
+            else:
+                self.tbMoveUp.setEnabled(True)
+                self.tbMoveDown.setEnabled(True)
+            
     #
     # load section record
 
@@ -2497,17 +3001,13 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         if self.sectionData == None or self.sectionData[0][0] <> self.section_id:
             # grab section record
-            sql = "SELECT id, sequence_number, content_code, data_security, "
-            sql += "geom_source, tags, use_period, annual_variation, note, "
-            sql += "media_start_time, media_end_time, section_text "
+            sql = "SELECT id, sequence_number, primary_code, data_security, "
+            sql += "geom_source, content_codes, tags, date_time, time_of_year, note, "
+            sql += "media_start_time, media_end_time, section_text, media_files "
             sql += "FROM interview_sections WHERE "
             sql += "interview_id = %d AND section_code = '%s';" % (self.interview_id, self.currentSectionCode)
             rs = self.cur.execute(sql)
@@ -2517,8 +3017,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.featureState = 'Load'
         # update section edit controls
         # set time and audio controls
-        self.audioStartPosition = self.timeString2seconds(self.sectionData[0][9])
-        self.audioEndPosition = self.timeString2seconds(self.sectionData[0][10])
+        self.audioStartPosition = self.timeString2seconds(self.sectionData[0][10])
+        self.audioEndPosition = self.timeString2seconds(self.sectionData[0][11])
         self.audioCurrentPosition = self.audioStartPosition
         self.spMediaStart.setValue(self.audioStartPosition)
         self.spMediaEnd.setValue(self.audioEndPosition)
@@ -2529,35 +3029,53 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.currentSequence = self.sectionData[0][1]
         # set interface fields
         self.leCode.setText(self.sectionData[0][2])
-        self.cbSectionSecurity.setCurrentIndex(self.default_security.index(self.sectionData[0][3]))
+        self.cbSectionSecurity.setCurrentIndex(self.project_security.index(self.sectionData[0][3]))
         geomSource = self.sectionData[0][4]
         if geomSource in ('pt','ln','pl'):
-            self.cbFeatureStatus.setCurrentIndex(1)
+            self.cbFeatureSource.setCurrentIndex(1)
         elif geomSource == 'ns':
-            self.cbFeatureStatus.setCurrentIndex(0)
+            self.cbFeatureSource.setCurrentIndex(0)
         else:
             # find matching section code
-            idx = self.cbFeatureStatus.findText(geomSource, QtCore.Qt.MatchEndsWith)
-            if idx <> 0 and idx < self.cbFeatureStatus.count():
-                self.cbFeatureStatus.setCurrentIndex(idx)
+            idx = self.cbFeatureSource.findText(geomSource, QtCore.Qt.MatchEndsWith)
+            if idx <> 0 and idx < self.cbFeatureSource.count():
+                self.cbFeatureSource.setCurrentIndex(idx)
             else:
-                self.cbFeatureStatus.setCurrentIndex(0)
-        self.pteTags.setPlainText(self.sectionData[0][5])
-        self.cbTimePeriod.setCurrentIndex(self.default_time_periods.index(self.sectionData[0][6]))
-        self.cbAnnualVariation.setCurrentIndex(self.default_annual_variation.index(self.sectionData[0][7]))
-        self.pteSectionNote.setPlainText(self.sectionData[0][8])
+                self.cbFeatureSource.setCurrentIndex(0)
+        self.pteContentCodes.setPlainText(self.sectionData[0][5])
+        self.pteSectionTags.setPlainText(self.sectionData[0][6])
+        self.cbDateTime.setCurrentIndex(self.project_date_time.index(self.sectionData[0][7]))
+        self.cbTimeOfYear.setCurrentIndex(self.project_time_of_year.index(self.sectionData[0][8]))
+        self.pteSectionNote.setPlainText(self.sectionData[0][9])
         # deselect items
         for i in range(self.lwProjectCodes.count()):
             item = self.lwProjectCodes.item(i)
             self.lwProjectCodes.setItemSelected(item,False)
         # select items
-        tagList = self.sectionData[0][5].split(',')
-        for tag in tagList:
-            self.lwProjectCodes.setItemSelected(self.lwProjectCodes.findItems(tag,QtCore.Qt.MatchExactly)[0], True)
+        codeList = self.sectionData[0][5].split(',')
+        for code in codeList:
+            self.lwProjectCodes.setItemSelected(self.lwProjectCodes.findItems(code,QtCore.Qt.MatchExactly)[0], True)
         # set text
-        self.pteSectionText.setPlainText(self.sectionData[0][11])
+        self.pteSectionText.setPlainText(self.sectionData[0][12])
+        if self.sectionData[0][13] <> None:
+            self.currentMediaFiles = self.sectionData[0][13]
+        else:
+            self.currentMediaFiles = ''
         # return to view state
         self.featureState = oldState
+        # add photos to tab
+        self.twPhotos.clear()
+        self.twPhotos.setRowCount(0)
+        if self.currentMediaFiles <> None:
+            cmFiles = self.currentMediaFiles.split('|||')
+            if len(cmFiles) > 0:
+                if cmFiles[0] == '':
+                    cmFiles = cmFiles[1:]
+                for item in cmFiles:
+                    if '||' in item:
+                        fName,caption = item.split('||')
+                        if os.path.exists(fName):
+                            self.photoLoad(fName,caption)
             
     #
     # update section code in spatial layer when the section code changes
@@ -2566,11 +3084,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # update spatial table if section is spatial
         if self.currentFeature == 'pt':
@@ -2598,25 +3112,25 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #
     # feature status changed
 
-    def sectionFeatureStatusChanged(self):
+    def sectionFeatureSourceChanged(self):
 
         # need to make changes here
         if self.featureState in ('View','Edit'):
-            if self.currentFeature == 'ns' and self.cbFeatureStatus.currentIndex() == 1:
+            if self.currentFeature == 'ns' and self.cbFeatureSource.currentIndex() == 1:
                 # was non-spatial and user choose to make it spatial switch to point tool
                 # because user can change to line or polygon tool if needed
                 self.featureState = 'Add Spatial'
                 self.mapToolsActivatePointCapture()
-            elif self.cbFeatureStatus.currentIndex() > 1:
+            elif self.cbFeatureSource.currentIndex() > 1:
                 # check that a section is not self referencing
-                referencedCode = self.cbFeatureStatus.currentText()[8:]
+                referencedCode = self.cbFeatureSource.currentText()[8:]
                 if referencedCode == self.currentSectionCode:
                     QtGui.QMessageBox.warning(self, 'User Error',
                         'A section can not reference itself', QtGui.QMessageBox.Ok)
                     if self.sectionData[0][4] in ('pt','ln','pl'):
-                        self.cbFeatureStatus.setCurrentIndex(1)
+                        self.cbFeatureSource.setCurrentIndex(1)
                     else:
-                        self.cbFeatureStatus.setCurrentIndex(0)
+                        self.cbFeatureSource.setCurrentIndex(0)
                 self.sectionEnableSaveCancel()
             else:
                 # enable saving or cancelling in response to editing
@@ -2625,29 +3139,25 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #
     # add / remove tags to sections
         
-    def sectionAddRemoveTags(self):
+    def sectionAddRemoveCodes(self):
 
         modifiers = QtGui.QApplication.keyboardModifiers()
         # use debug track order of calls
         if self.editDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself() + ': ' + self.featureState, QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # only act if editing or viewing, not loading
         if self.featureState in ('View','Edit'):
             # grab modifier key
             if modifiers == QtCore.Qt.ControlModifier:
-                replaceContentCode = True
+                replacePrimaryCode = True
             else:
-                replaceContentCode = False
+                replacePrimaryCode = False
             # determine what items are selected
             selectedItems = self.lwProjectCodes.selectedItems()
             # if adding items
             if self.selectedCodeCount < len(selectedItems):
-                if replaceContentCode == True:
+                if replacePrimaryCode == True:
                     self.leCode.setText(self.lwProjectCodes.currentItem().text())
             # if removing items
             else:
@@ -2661,14 +3171,14 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                     self.lwProjectCodes.setItemSelected(itemList[0],True)
                     selectedItems = self.lwProjectCodes.selectedItems()
             self.selectedCodeCount = len(selectedItems)
-            tagList = []
-            sectionTags = ''
+            codeList = []
+            sectionCodes = ''
             for item in selectedItems:
-                tagList.append(item.text())
-            tagList.sort()
-            for tag in tagList:
-                sectionTags += tag + ','
-            self.pteTags.setPlainText(sectionTags[:-1])
+                codeList.append(item.text())
+            codeList.sort()
+            for code in codeList:
+                sectionCodes += code + ','
+            self.pteContentCodes.setPlainText(sectionCodes[:-1])
             # check if content code has been deselected and if so reselect it
             itemList = self.lwProjectCodes.findItems(self.leCode.text(),QtCore.Qt.MatchExactly)
             self.lwProjectCodes.setItemSelected(itemList[0],True)
@@ -2681,17 +3191,90 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
     #####################################################
 
     #
+    # map tools scale enable
+
+    def mapToolsScaleNotification(self):
+
+        if self.lmbMode in 'Interview' and self.featureState == 'View' and \
+        self.interviewState == 'Running':
+            # use debug track order of calls
+            if self.editDebug:
+                QgsMessageLog.logMessage(self.myself())
+            if self.mapToolsScaleOK():
+                self.mapToolsEnableDrawing()
+                self.mapToolsEnableEditing()
+                if self.showZoomNotices and self.zoomMessage <> '':
+                    self.iface.messageBar().clearWidgets()
+                    self.iface.messageBar().pushMessage("Proceed", self.zoomMessage, level=QgsMessageBar.INFO, duration=1)            
+            else:
+                self.mapToolsDisableDrawing()
+                self.mapToolsDisableEditing()
+                if self.showZoomNotices:
+                    self.iface.messageBar().clearWidgets()
+                    self.iface.messageBar().pushMessage("Error", self.zoomMessage, level=QgsMessageBar.CRITICAL, duration=2)            
+
+    #
+    # map tools scale OK
+
+    def mapToolsScaleOK(self):
+
+        cDenom = self.canvas.scale()
+        if cDenom > self.maxDenom :
+            self.zoomMessage = "Outside project map scale range. Zoom in to add features."
+            self.canDigitize = False
+        elif cDenom < self.minDenom:
+            self.zoomMessage = "Outside project map scale range. Zoom out to add features."
+            self.canDigitize = False
+        else:
+            if self.canDigitize == True:
+                self.zoomMessage = ''
+            else:
+                self.zoomMessage = "Within project map scale range. You can add features."
+                self.canDigitize = True
+        return(self.canDigitize)
+
+    #
+    # map tools enable drawing
+
+    def mapToolsEnableDrawing(self):
+        
+        self.tbPoint.setEnabled(True)
+        self.tbLine.setEnabled(True)
+        self.tbPolygon.setEnabled(True)
+
+    #
+    # map tools disable drawing
+
+    def mapToolsDisableDrawing(self):
+
+        self.tbPoint.setDisabled(True)
+        self.tbLine.setDisabled(True)
+        self.tbPolygon.setDisabled(True)
+
+    #
+    # map tools enable editing
+
+    def mapToolsEnableEditing(self):
+
+        self.tbEdit.setEnabled(True)
+        self.tbMove.setEnabled(True)
+
+    #
+    # map tools disable editing
+
+    def mapToolsDisableEditing(self):
+
+        self.tbEdit.setDisabled(True)
+        self.tbMove.setDisabled(True)
+
+    #
     # activate pan tool
 
     def mapToolsActivatePanTool(self):
 
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.canvas.setMapTool(self.panTool)
         self.tbPan.setChecked(True)
@@ -2716,11 +3299,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.copyPrevious = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.sectionEnableCancel()
         self.currentFeature = 'pt'
@@ -2731,12 +3310,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.iface.legendInterface().setCurrentLayer(self.points_layer)
         self.canvas.setMapTool(self.pointTool)
         self.tbPoint.setChecked(True)
-        self.tbPoint.setEnabled(True)
-        self.tbLine.setEnabled(True)
-        self.tbPolygon.setEnabled(True)
+        self.mapToolsEnableDrawing()
         # disable editing
-        self.tbEdit.setDisabled(True)
-        self.tbMove.setDisabled(True)
+        self.mapToolsDisableEditing()
         # adjust visibility and state of other tools
         self.tbLine.setChecked(False)
         self.tbPolygon.setChecked(False)
@@ -2758,11 +3334,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.copyPrevious = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.sectionEnableCancel()
         self.currentFeature = 'ln'
@@ -2773,9 +3345,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.iface.legendInterface().setCurrentLayer(self.lines_layer)
         self.canvas.setMapTool(self.lineTool)
         self.tbLine.setChecked(True)
+        self.mapToolsEnableDrawing()
         # disable editing
-        self.tbEdit.setDisabled(True)
-        self.tbMove.setDisabled(True)
+        self.mapToolsDisableEditing()
         # adjust visibility and state of other tools
         self.tbPolygon.setChecked(False)
         self.tbPoint.setChecked(False)
@@ -2797,11 +3369,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.copyPrevious = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         self.sectionEnableCancel()
         self.currentFeature = 'pl'
@@ -2812,9 +3380,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.iface.legendInterface().setCurrentLayer(self.polygons_layer)
         self.canvas.setMapTool(self.polygonTool)
         self.tbPolygon.setChecked(True)
+        self.mapToolsEnableDrawing()
         # disable editing
-        self.tbEdit.setDisabled(True)
-        self.tbMove.setDisabled(True)
+        self.mapToolsDisableEditing()
         # adjust visibility and state of other tools
         self.tbLine.setChecked(False)
         self.tbPoint.setChecked(False)
@@ -2829,11 +3397,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # set buttons
         self.tbEdit.setChecked(True)
@@ -2902,11 +3466,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
 
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # set buttons
         self.tbEdit.setChecked(False)
@@ -2983,13 +3543,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.rapidCapture = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-                #QgsMessageLog.logMessage(self.featureState)
-                #QgsMessageLog.logMessage(str(self.rapidCapture))
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # get next point id
         self.point_id = self.previousPointId + 1
@@ -2999,7 +3553,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         sql = "INSERT INTO points "
         sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
         sql += "VALUES (%d,%d,%d, " % (self.point_id, self.interview_id, self.section_id)
-        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
         sql += "GeomFromText('%s',3857));" % point.exportToWkt()
         self.cur.execute(sql)
         sql = "SELECT count(*) FROM interview_sections "
@@ -3015,8 +3569,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
-            if self.cbFeatureStatus.currentIndex() <> 1: 
-                self.cbFeatureStatus.setCurrentIndex(1)
+            if self.cbFeatureSource.currentIndex() <> 1: 
+                self.cbFeatureSource.setCurrentIndex(1)
         else:
             sql = "UPDATE interview_sections "
             sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
@@ -3048,9 +3602,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.points_layer.select(self.point_id)
             self.sectionDisableSaveCancel()
         # add to feature status list if needed
-        idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+        idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
         if idx == -1:
-            self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+            self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
 
     #
     # place line using custom line tool
@@ -3065,11 +3619,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.rapidCapture = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # get next line id
         self.line_id = self.previousLineId + 1
@@ -3079,7 +3629,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         sql = "INSERT INTO lines "
         sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
         sql += "VALUES (%d,%d,%d, " % (self.line_id, self.interview_id, self.section_id)
-        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
         sql += "GeomFromText('%s',3857));" % line.exportToWkt()
         self.cur.execute(sql)
         # make sure the feature types line up
@@ -3097,8 +3647,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
-            if self.cbFeatureStatus.currentIndex() <> 1: 
-                self.cbFeatureStatus.setCurrentIndex(1)
+            if self.cbFeatureSource.currentIndex() <> 1: 
+                self.cbFeatureSource.setCurrentIndex(1)
         else:
             sql = "UPDATE interview_sections "
             sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
@@ -3106,9 +3656,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.cur.execute(sql)
         # commit record
         self.conn.commit()
-        idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+        idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
         if idx == -1:
-            self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+            self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
         if self.lmbMode == 'Interview':
             # reset state
             if self.featureState == 'Create':
@@ -3132,9 +3682,9 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.lines_layer.select(self.line_id)
             self.sectionDisableSaveCancel()
         # add to feature status list if needed
-        idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+        idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
         if idx == -1:
-            self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+            self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
 
     #
     # place polygon using custom polygon tool
@@ -3149,11 +3699,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
                 self.rapidCapture = False
         # use debug track order of calls
         if self.spatialDebug:
-            if self.debugLog == True:
-                QgsMessageLog.logMessage(self.myself())
-            else:
-                QtGui.QMessageBox.warning(self, 'DEBUG',
-                    self.myself(), QtGui.QMessageBox.Ok)
+            QgsMessageLog.logMessage(self.myself())
         # method body
         # get next polygon id
         self.polygon_id = self.previousPolygonId + 1
@@ -3163,7 +3709,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         sql = "INSERT INTO polygons "
         sql += "(id,interview_id,section_id,section_code,content_code,date_created,date_modified,geom) "
         sql += "VALUES (%d,%d,%d, " % (self.polygon_id, self.interview_id, self.section_id)
-        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentContentCode,self.section_date_created, self.section_date_modified)
+        sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
         sql += "GeomFromText('%s',3857));" % polygon.exportToWkt()
         self.cur.execute(sql)
         # make sure the feature types line up
@@ -3181,8 +3727,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             sql += "spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
             sql += "WHERE interview_id = %d and id = %d " % (self.interview_id, self.section_id)
             self.cur.execute(sql)
-            if self.cbFeatureStatus.currentIndex() <> 1: 
-                self.cbFeatureStatus.setCurrentIndex(1)
+            if self.cbFeatureSource.currentIndex() <> 1: 
+                self.cbFeatureSource.setCurrentIndex(1)
         else:
             sql = "UPDATE interview_sections "
             sql += "SET spatial_data_scale = '%s' " % str(int(self.canvas.scale()))
@@ -3213,7 +3759,119 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
             self.polygons_layer.select(self.polygon_id)
             self.sectionDisableSaveCancel()
         # add to feature status list if needed
-        idx = self.cbFeatureStatus.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
+        idx = self.cbFeatureSource.findText(self.currentSectionCode, QtCore.Qt.MatchEndsWith)
         if idx == -1:
-            self.cbFeatureStatus.addItem('same as %s' % self.currentSectionCode)
+            self.cbFeatureSource.addItem('same as %s' % self.currentSectionCode)
 
+
+
+
+    #####################################################
+    #                   photos                          #
+    #####################################################
+
+    #
+    # load photo to list
+
+    def photoLoad(self, fName, caption):
+        
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        p=QtGui.QPixmap(fName)
+        if p.height()>p.width():
+            p=p.scaledToWidth(self.thumbnailSize)
+        else:
+            p=p.scaledToHeight(self.thumbnailSize)
+        p=p.copy(0,0,self.thumbnailSize,self.thumbnailSize)
+        item = QtGui.QTableWidgetItem()
+        item.setStatusTip(caption)
+        item.setIcon(QtGui.QIcon(p))
+        rCnt = self.twPhotos.rowCount()+1
+        self.twPhotos.setRowCount(rCnt)
+        self.twPhotos.setItem(rCnt-1,0,item)
+        item = QtGui.QTableWidgetItem(caption)
+        self.twPhotos.setItem(rCnt-1,1,item)
+
+    #
+    # add photo
+
+    def photoAdd(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        fName = QtGui.QFileDialog.getOpenFileName(self, 'Select Project Directory',self.projectDir,"Image Files (*.png *.PNG *.jpg *.JPG *.bmp *.BMP *.tif *.tiff *.TIF *.TIFF *.gif *.GIF)")
+        if os.path.exists(fName):
+            caption, ok = QtGui.QInputDialog.getText(self, 'Caption', 
+                'Enter the caption for this image')
+            if ok:
+                self.photoLoad(fName,caption)
+                self.twPhotos.clearSelection()
+                self.currentMediaFiles += '|||%s||%s' % (fName,caption)
+                self.sectionEnableSaveCancel()
+        
+    #
+    # edit photo
+
+    def photoEdit(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        cRow = self.twPhotos.currentRow()
+        oldCaption = self.twPhotos.item(cRow,1).text()
+        caption, ok = QtGui.QInputDialog.getText(self, 'Caption', 
+            'Edit the caption for this image', text = oldCaption)
+        if ok:
+            self.twPhotos.item(cRow,1).setText(caption)
+            cmList = self.currentMediaFiles.split('|||')
+            if len(cmList) > 0:
+                if cmList[0] == '':
+                    cmList = cmList[1:]
+                cmList[cRow] = '%s||%s' % (cmList[cRow].split('||')[0],caption)
+            self.currentMediaFiles = ''
+            for item in cmList:
+                self.currentMediaFiles += '|||%s' % item
+            self.sectionEnableSaveCancel()
+        self.twPhotos.clearSelection()
+        
+            
+    #
+    # remove photo
+
+    def photoRemove(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself())
+        cRow = self.twPhotos.currentRow()
+        self.twPhotos.removeRow(cRow)
+        self.twPhotos.clearSelection()
+        cmList = self.currentMediaFiles.split('|||')
+        if len(cmList) > 0:
+            if cmList[0] == '':
+                cmList = cmList[1:]
+            cmList.remove(cmList[cRow])
+        self.currentMediaFiles = ''
+        for item in cmList:
+            self.currentMediaFiles += '|||%s' % item
+        self.sectionEnableSaveCancel()
+
+    #
+    # select or deselect a photo
+
+    def photoSelect(self):
+
+        # use debug track order of calls
+        if self.basicDebug:
+            QgsMessageLog.logMessage(self.myself() + ':' + self.featureState)
+        if self.featureState <> 'Load':
+            if len(self.twPhotos.selectedItems()) > 0:
+                self.pbRemovePhoto.setEnabled(True)
+                self.pbEditPhoto.setEnabled(True)
+            else:
+                self.pbRemovePhoto.setDisabled(True)
+                self.pbEditPhoto.setDisabled(True)
+
+            
