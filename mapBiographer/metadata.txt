@@ -9,11 +9,11 @@
 
 [general]
 name=LOUIS Map Biographer
-qgisMinimumVersion=2.6
+qgisMinimumVersion=2.8
 description=Effectively conduct direct to digital map biographies and traditional land use studies. Requires pyspatialite, pyaudio and pydub libraries. Install the required libraries before installing this plugin.
 about=The goal for LOUIS Map Biographer is to provide the quality and elegance of paper based interviews but deliver real time and cost savings by allowing effective and rapid direct-to-digital data capture by a single interviewer.
     This is an experimental release and your help is needed to realize this goal so comments and suggestions are welcome.
-version=0.9
+version=0.9.5.1
 author=Apropos Information Systems Inc.
 email=info@aproposinfosystems.com
 
@@ -31,7 +31,7 @@ tracker=http://github.com/tsw-apropos/mapbiographer/issues
 repository=http://github.com/tsw-apropos/mapbiographer
 icon=settings.png
 # experimental flag
-experimental=True
+experimental=False
 
 # deprecated flag (applies to the whole plugin, not just a single version)
 deprecated=False

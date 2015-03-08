@@ -1194,8 +1194,8 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # set display characteristics
         self.polygons_layer.rendererV2().symbol().setAlpha(0.5)
         symbolLayer = self.polygons_layer.rendererV2().symbol().symbolLayer(0)
-        symbolLayer.setFillColor(QtGui.QColor('#47b247'))
-        symbolLayer.setBorderColor(QtGui.QColor('#245924'))
+        symbolLayer.setFillColor(QtGui.QColor('#ff7800'))
+        symbolLayer.setBorderColor(QtGui.QColor('#717272'))
         symbolLayer.setBorderWidth(0.6)
         QgsMapLayerRegistry.instance().addMapLayer(self.polygons_layer)
         # add to overview
@@ -1206,7 +1206,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         palyrPolygons.readFromLayer(self.polygons_layer)
         palyrPolygons.enabled = True
         palyrPolygons.fieldName = 'section_code'
-        palyrPolygons.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+        palyrPolygons.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
         palyrPolygons.writeToLayer(self.polygons_layer)
         #
         # lines layer
@@ -1218,7 +1218,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         self.lines_layer.setDisplayField('section_code')
         # set display characteristics
         symbol = self.lines_layer.rendererV2().symbol()
-        symbol.setColor(QtGui.QColor('#245924'))
+        symbol.setColor(QtGui.QColor('#ff7800'))
         symbol.setWidth(0.6)
         QgsMapLayerRegistry.instance().addMapLayer(self.lines_layer)
         # add to overview
@@ -1231,7 +1231,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         palyrLines.fieldName = 'section_code'
         palyrLines.placement= QgsPalLayerSettings.Line
         palyrLines.placementFlags = QgsPalLayerSettings.AboveLine
-        palyrLines.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+        palyrLines.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
         palyrLines.writeToLayer(self.lines_layer)
         #
         # points layer
@@ -1244,7 +1244,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         # set display characteristics
         symbol = self.points_layer.rendererV2().symbols()[0]
         symbol.setSize(3)
-        symbol.setColor(QtGui.QColor('#47b247'))
+        symbol.setColor(QtGui.QColor('#ff7800'))
         symbol.setAlpha(0.5)
         QgsMapLayerRegistry.instance().addMapLayer(self.points_layer)
         # add to overview
@@ -1257,7 +1257,7 @@ class mapBiographerTranscriber(QtGui.QDockWidget, Ui_mapbioTranscriber):
         palyrPoints.fieldName = 'section_code'
         palyrPoints.placement= QgsPalLayerSettings.OverPoint
         palyrPoints.quadrantPosition = QgsPalLayerSettings.QuadrantBelowRight
-        palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+        palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
         palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.OffsetQuad,True, True, '8','')
         palyrPoints.writeToLayer(self.points_layer)
         # set display fields for map tips

@@ -332,7 +332,7 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 palyrPolygons.readFromLayer(self.polygons_layer)
                 palyrPolygons.enabled = True
                 palyrPolygons.fieldName = 'section_code'
-                palyrPolygons.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+                palyrPolygons.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
                 palyrPolygons.writeToLayer(self.polygons_layer)
                 # lines
                 palyrLines = QgsPalLayerSettings()
@@ -341,7 +341,7 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 palyrLines.fieldName = 'section_code'
                 palyrLines.placement= QgsPalLayerSettings.Line
                 palyrLines.placementFlags = QgsPalLayerSettings.AboveLine
-                palyrLines.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+                palyrLines.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
                 palyrLines.writeToLayer(self.lines_layer)
                 # points
                 palyrPoints = QgsPalLayerSettings()
@@ -350,7 +350,7 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 palyrPoints.fieldName = 'section_code'
                 palyrPoints.placement= QgsPalLayerSettings.OverPoint
                 palyrPoints.quadrantPosition = QgsPalLayerSettings.QuadrantBelowRight
-                palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'10','')
+                palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.Size,True,True,'11','')
                 palyrPoints.setDataDefinedProperty(QgsPalLayerSettings.OffsetQuad,True, True, '8','')
                 palyrPoints.writeToLayer(self.points_layer)
                 # refresh
