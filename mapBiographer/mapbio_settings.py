@@ -26,7 +26,7 @@ from qgis.core import *
 from ui_mapbio_settings import Ui_mapBiographerSettings
 from pyspatialite import dbapi2 as sqlite
 import os, datetime, zipfile, time
-import inspect, shutil, glob
+import inspect, shutil, glob, subprocess
 from pydub import AudioSegment
 
 class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
@@ -207,11 +207,13 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
 
     def settingsGetDir(self):
         
-        executable = QtGui.QFileDialog.getOpenFileName(self, 'Select Image File', "Image Files (*.png *.jpg *.bmp *.tiff)")
-        if executable <> '':
-            self.leMarxanPath.setText(executable)
-        else:
-            self.leMarxanPath.setText('')
+        lmbdir = QtGui.QFileDialog.getExistingDirectory(self, 'Select Directory')
+        if lmbdir == '':
+            lmbdir = '.'
+        self.leProjectDir.setText(lmbdir)
+        self.dirName = lmbdir
+        self.refreshDatabaseList()
+        self.settingsEnableEdit()
 
     #
     # select project database
@@ -329,6 +331,21 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         self.settingsDisableEdit()
         
     #
+    # refresh database list
+    
+    def refreshDatabaseList(self):
+
+        # populate project database list
+        self.cbProjectDatabase.clear()
+        self.cbProjectDatabase.addItem('--None Selected--')
+        self.cbProjectDatabase.addItem('Create New Database')
+        listing = os.listdir(self.dirName)
+        for item in listing:
+            if '.db' in item:
+                self.cbProjectDatabase.addItem(item)
+        self.cbProjectDatabase.setCurrentIndex(0)
+    
+    #
     # read LMB settings
 
     def settingsRead(self):
@@ -346,15 +363,7 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         else:
             self.dirName = rv
         self.leProjectDir.setText(self.dirName)
-        # populate project database list
-        self.cbProjectDatabase.clear()
-        self.cbProjectDatabase.addItem('--None Selected--')
-        self.cbProjectDatabase.addItem('Create New Database')
-        listing = os.listdir(self.dirName)
-        for item in listing:
-            if '.db' in item:
-                self.cbProjectDatabase.addItem(item)
-        self.cbProjectDatabase.setCurrentIndex(0)
+        self.refreshDatabaseList()
         # select project database
         rv = s.value('mapBiographer/projectDB')
         if rv == None:
@@ -1205,12 +1214,18 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
             self.exportInterviewHeritage1('heritage1',intvData,partData,intvExDir)
             # process multimedia
             # check if audio file exists
-            wfName = os.path.join(self.dirName,intvData[2]+'.wav')
-            mp3Name = os.path.join(intvExDir,intvData[2]+'.mp3')
-            if os.path.exists(wfName):
-                self.mp3Create(wfName,mp3Name)
-                #hcopy = os.path.join(,intvData[2]+'.mp3')
-                #shutil.copy(mp3Name,hcopy)
+            srcName = os.path.join(self.dirName,intvData[2]+'.wav')
+            outName = os.path.join(intvExDir,intvData[2]+'.ogg')
+            if os.path.exists(srcName):
+                retval = self.oggCreate(srcName,outName)
+                if retval == -1:
+                    messageText = 'Unable to convert audio files. '
+                    if os.name <> 'posix':
+                        messageText += 'Could not find\n C:\Program Files\ffmpeg\bin\ffmpeg.exe'
+                    else:
+                        messageText += "Confirm that pydub library is installed and functioning."
+                    QtGui.QMessageBox.warning(self, 'Warning',
+                           messageText, QtGui.QMessageBox.Ok)
             # compress outputs into zip file
             zipFName = intvData[2] + '_part1.zip'
             intZFileName = os.path.join(exDir,zipFName)
@@ -1283,10 +1298,39 @@ class mapBiographerSettings(QtGui.QDialog, Ui_mapBiographerSettings):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
-        src = AudioSegment.from_wav(srcFile)
-        src.export(destFile, format='mp3', bitrate='44.1k')
-    
+        if os.name == 'posix':
+            src = AudioSegment.from_wav(srcFile)
+            src.export(destFile, format='mp3', bitrate='44.1k')
+        else:
+            exeName = 'c:/Program Files/ffmpeg/bin/ffmpeg.exe'
+            if os.path.exists(exeName):
+                callList = [exeName,'-i',srcFile,'-b:v','44.1k',destFile]
+                p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'), stdin=subprocess.PIPE, stderr=open(os.devnull,'wb'),shell=True)
+                p.communicate()
+            else:
+                return(-1)
+        return(0)
 
+    #
+    # create ogg audio file
+
+    def oggCreate(self, srcFile, destFile):
+
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        if os.name == 'posix':
+            src = AudioSegment.from_wav(srcFile)
+            src.export(destFile, format='ogg')
+        else:
+            exeName = 'c:/Program Files/ffmpeg/bin/ffmpeg.exe'
+            if os.path.exists(exeName):
+                callList = [exeName,'-i',srcFile,destFile]
+                p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'), stdin=subprocess.PIPE, stderr=open(os.devnull,'wb'),shell=True)
+                p.communicate()
+            else:
+                return(-1)
+        return(0)
         
     ########################################################
     #                   database functions                 #
