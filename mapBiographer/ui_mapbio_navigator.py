@@ -2,8 +2,8 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_navigator.ui'
 #
-# Created: Fri Nov  7 14:31:32 2014
-#      by: PyQt4 UI code generator 4.9.3
+# Created: Fri Apr 10 09:58:42 2015
+#      by: PyQt4 UI code generator 4.11.2
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -12,7 +12,16 @@ from PyQt4 import QtCore, QtGui
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
 except AttributeError:
-    _fromUtf8 = lambda s: s
+    def _fromUtf8(s):
+        return s
+
+try:
+    _encoding = QtGui.QApplication.UnicodeUTF8
+    def _translate(context, text, disambig):
+        return QtGui.QApplication.translate(context, text, disambig, _encoding)
+except AttributeError:
+    def _translate(context, text, disambig):
+        return QtGui.QApplication.translate(context, text, disambig)
 
 class Ui_mapbioNavigator(object):
     def setupUi(self, mapbioNavigator):
@@ -66,14 +75,14 @@ class Ui_mapbioNavigator(object):
         QtCore.QMetaObject.connectSlotsByName(mapbioNavigator)
 
     def retranslateUi(self, mapbioNavigator):
-        mapbioNavigator.setWindowTitle(QtGui.QApplication.translate("mapbioNavigator", "LOUIS Map Biographer - Navigation", None, QtGui.QApplication.UnicodeUTF8))
-        self.lblBase.setText(QtGui.QApplication.translate("mapbioNavigator", "Select Base Map", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbBoundary.setText(QtGui.QApplication.translate("mapbioNavigator", "Hide Boundary", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbReference.setText(QtGui.QApplication.translate("mapbioNavigator", "Show Reference", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbViewFeatures.setText(QtGui.QApplication.translate("mapbioNavigator", "Hide Features", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbFeatureLabels.setText(QtGui.QApplication.translate("mapbioNavigator", "Hide Labels", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbZoomToStudyArea.setText(QtGui.QApplication.translate("mapbioNavigator", "Zoom Study Area", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbZoomFull.setText(QtGui.QApplication.translate("mapbioNavigator", "Zoom Full Extent", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbZoomIn.setText(QtGui.QApplication.translate("mapbioNavigator", "Zoom In", None, QtGui.QApplication.UnicodeUTF8))
-        self.pbZoomOut.setText(QtGui.QApplication.translate("mapbioNavigator", "Zoom Out", None, QtGui.QApplication.UnicodeUTF8))
+        mapbioNavigator.setWindowTitle(_translate("mapbioNavigator", "LOUIS Map Biographer - Navigation", None))
+        self.lblBase.setText(_translate("mapbioNavigator", "Select Base Map", None))
+        self.pbBoundary.setText(_translate("mapbioNavigator", "Hide Boundary", None))
+        self.pbReference.setText(_translate("mapbioNavigator", "Show Reference", None))
+        self.pbViewFeatures.setText(_translate("mapbioNavigator", "Hide Features", None))
+        self.pbFeatureLabels.setText(_translate("mapbioNavigator", "Hide Labels", None))
+        self.pbZoomToStudyArea.setText(_translate("mapbioNavigator", "Zoom Study Area", None))
+        self.pbZoomFull.setText(_translate("mapbioNavigator", "Zoom Full Extent", None))
+        self.pbZoomIn.setText(_translate("mapbioNavigator", "Zoom In", None))
+        self.pbZoomOut.setText(_translate("mapbioNavigator", "Zoom Out", None))
 

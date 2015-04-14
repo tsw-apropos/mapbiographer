@@ -26,8 +26,8 @@ from qgis.core import *
 # Initialize Qt resources from file resources.py
 import resources_rc
 # Import the code for the dialog
-from mapbio_settings import mapBiographerSettings
-from mapbio_transcriber import mapBiographerTranscriber
+from mapbio_manager import mapBiographerManager
+from mapbio_collector import mapBiographerCollector
 import os.path
 
 
@@ -56,7 +56,7 @@ class mapBiographer:
 
         # Manage Action
         self.manageAction = QtGui.QAction(
-            QtGui.QIcon(":/plugins/mapbiographer/settings.png"),
+            QtGui.QIcon(":/plugins/mapbiographer/manager.png"),
             u"Manage Interviews", self.iface.mainWindow())
         # connect the action to the run method
         self.manageAction.triggered.connect(self.manage)
@@ -64,7 +64,7 @@ class mapBiographer:
         
         # LMB Action
         self.lmbAction = QtGui.QAction(
-            QtGui.QIcon(":/plugins/mapbiographer/interview.png"),
+            QtGui.QIcon(":/plugins/mapbiographer/collector.png"),
             u"Conduct, Import and Transcribe Interviews", self.iface.mainWindow())
         # connection action to run method
         self.lmbAction.triggered.connect(self.lmb)
@@ -87,7 +87,7 @@ class mapBiographer:
     def manage(self):
 
         # Create the dialog (after translation) and keep reference
-        self.dlg = mapBiographerSettings(self.iface)
+        self.dlg = mapBiographerManager(self.iface)
         # show the dialog
         self.dlg.show()
         # Run the dialog event loop
@@ -115,5 +115,5 @@ class mapBiographer:
                 if obj.isVisible() == True:
                     obj.hide()
         # display panel
-        self.panel = mapBiographerTranscriber(self.iface)
+        self.panel = mapBiographerCollector(self.iface)
   

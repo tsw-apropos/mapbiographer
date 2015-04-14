@@ -1,7 +1,7 @@
 <RCC>
     <qresource prefix="/plugins/mapbiographer" >
-        <file>settings.png</file>
-        <file>interview.png</file>
+        <file>manager.png</file>
+        <file>collector.png</file>
         <file>pan.png</file>
         <file>line.png</file>
         <file>point.png</file>
