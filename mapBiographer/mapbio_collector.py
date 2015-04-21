@@ -173,6 +173,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # section reordering
         QtCore.QObject.connect(self.tbMoveUp, QtCore.SIGNAL("clicked()"), self.sectionMoveUp)
         QtCore.QObject.connect(self.tbMoveDown, QtCore.SIGNAL("clicked()"), self.sectionMoveDown)
+        QtCore.QObject.connect(self.tbSort, QtCore.SIGNAL("clicked()"), self.sectionSort)
         # buttons
         QtCore.QObject.connect(self.pbSaveSection, QtCore.SIGNAL("clicked()"), self.sectionSaveEdits)
         QtCore.QObject.connect(self.pbCancelSection, QtCore.SIGNAL("clicked()"), self.sectionCancelEdits)
@@ -239,6 +240,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             # display section reordering
             self.tbMoveUp.setVisible(True)
             self.tbMoveDown.setVisible(True)
+            self.tbSort.setVisible(True)
             # display media player
             self.tbMediaPlay.setVisible(True)
             self.hsSectionMedia.setVisible(True)
@@ -280,6 +282,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             # hide section reordering
             self.tbMoveUp.setVisible(False)
             self.tbMoveDown.setVisible(False)
+            self.tbSort.setVisible(False)
             # display media player
             self.tbMediaPlay.setVisible(True)
             self.hsSectionMedia.setVisible(True)
@@ -317,6 +320,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             # hide section reordering
             self.tbMoveUp.setVisible(False)
             self.tbMoveDown.setVisible(False)
+            self.tbSort.setVisible(False)
             # hide media player
             self.tbMediaPlay.setVisible(False)
             self.hsSectionMedia.setVisible(False)
@@ -507,13 +511,27 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                             idx = fieldDict[dataDict['primaryCode']][0]
                             sql += 'primary_code = "%s", ' % str(attrs[idx])
                             self.currentPrimaryCode = str(attrs[idx])
+                        else:
+                            # since primary code was not specified
+                            # extract from section code
+                            pc = re.findall(r'\D+', str(attrs[idx]))
+                            if len(pc) > 0:
+                                pc = pc[0]
+                            else:
+                                pc = self.defaultCode
+                            sql += 'primary_code = "%s", ' % pc
+                            self.currentPrimaryCode = pc
                     else:
+                        # creating section code  on import
                         if dataDict['primaryCode'] <> '--None--':
+                            # use specified primary code
                             idx = fieldDict[dataDict['primaryCode']][0]
                             sql += 'primary_code = "%s", ' % str(attrs[idx])
                             self.currentPrimaryCode = str(attrs[idx])
                             self.currentSectionCode = "%s%04d" % (self.currentPrimaryCode,self.currentSequence)
                             sql += 'section_code = "%s", ' % self.currentSectionCode
+                        # note that if no section or primary code field then
+                        # defaults applied
                     if dataDict['security'] <> '--None--':
                         idx = fieldDict[dataDict['security']][0]
                         sql += 'data_security = "%s", ' % str(attrs[idx])
@@ -567,6 +585,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                         sql += "VALUES (%d,%d,%d, " % (self.line_id, self.interview_id, self.section_id)
                         sql += "'%s','%s','%s','%s'," %  (self.currentSectionCode,self.currentPrimaryCode,self.section_date_created, self.section_date_modified)
                         sql += "GeomFromText('%s',3857));" % geom.exportToWkt()
+                        QgsMessageLog.logMessage(sql)
                         self.cur.execute(sql)
                     elif self.currentFeature == 'pl':
                         self.polygon_id = self.previousPolygonId + 1
@@ -933,7 +952,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 intvData = rs.fetchall()
             else:
                 sql = "SELECT a.id, a.code FROM interviews a "
-                sql += "WHERE a.data_status = 'RC';"
+                sql += "WHERE a.data_status = 'C';"
                 rs = self.cur.execute(sql)
                 intvData = rs.fetchall()
             #QgsMessageLog.logMessage('intvData len: %d ' % len(intvData))
@@ -1873,13 +1892,13 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             sql += "start_datetime = '%s', " % startString
             sql += "end_datetime = '%s', " % endString
             sql += "date_modified = '%s', " % endString[:-6]
-            sql += "data_status = 'RC' "
+            sql += "data_status = 'C' "
             sql += "WHERE id = %d; " % self.interview_id
             self.cur.execute(sql)
             self.conn.commit()
         elif self.cbMode.currentText() == 'Import Interview':
             sql = "UPDATE interviews SET "
-            sql += "data_status = 'RC' "
+            sql += "data_status = 'C' "
             sql += "WHERE id = %d; " % self.interview_id
             self.cur.execute(sql)
             self.conn.commit()
@@ -2022,6 +2041,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
 
     def sectionMoveUp(self):
 
+        # use debug track order of calls
+        if self.editDebug:
+            QgsMessageLog.logMessage(self.myself())
         self.interviewState = 'Import'
         # get current record sequence value
         cSeqVal = self.currentSequence
@@ -2053,6 +2075,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
 
     def sectionMoveDown(self):
 
+        # use debug track order of calls
+        if self.editDebug:
+            QgsMessageLog.logMessage(self.myself())
         self.interviewState = 'Import'
         startRow = self.lwSectionList.currentRow()
         # get current record sequence value
@@ -2088,17 +2113,62 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.setSectionSortButtons()
 
     #
+    # section sort
+
+    def sectionSort(self):
+
+        # use debug track order of calls
+        if self.editDebug:
+            QgsMessageLog.logMessage(self.myself())
+        questionText = "This will re-order all sections. This can not be reversed. "
+        questionText += "Are you sure you want to do this?"
+        response = QtGui.QMessageBox.information(self, 'Re-order features',
+                    questionText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+        if response == QtGui.QMessageBox.Yes:
+            # get current id, and content codes ordered by sequence
+            sql = "SELECT id, primary_code, sequence_number, geom_source, section_code "
+            sql += "FROM interview_sections "
+            sql += "WHERE interview_id = %d ORDER by sequence_number " % self.interview_id
+            rs = self.cur.execute(sql)
+            secInfo = rs.fetchall()
+            newInfo = []
+            # collect information
+            for sec in secInfo:
+                #QgsMessageLog.logMessage(sec[4])
+                sortVal = re.findall(r'\d+', sec[4])
+                if len(sortVal) > 0:
+                    sortVal = int(sortVal[0])
+                else:
+                    sortVal = 0
+                #QgsMessageLog.logMessage(str(sortVal))
+                newInfo.append([int(sortVal),sec[0]])
+            # sort information
+            newInfo.sort()
+            # write changes
+            x = 1
+            for newSec in newInfo:
+                # write new section codes and sequences numbers
+                sql = "UPDATE interview_sections SET "
+                sql += "sequence_number = %d " % x
+                sql += "WHERE interview_id = %d and id = %d" % (self.interview_id, newSec[1])
+                self.cur.execute(sql)
+                x += 1
+            self.conn.commit()
+            self.interviewUnload()
+            self.interviewLoad()
+    #
     # section renumber
 
     def sectionRenumber(self):
 
-
+        # use debug track order of calls
+        if self.editDebug:
+            QgsMessageLog.logMessage(self.myself())
         questionText = "This will renumber all sections. This can not be reversed. "
-        questionText = "Are you sure you want to do this?"
+        questionText += "Are you sure you want to do this?"
         response = QtGui.QMessageBox.information(self, 'Renumber features',
                     questionText, QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
         if response == QtGui.QMessageBox.Yes:
-            QgsMessageLog.logMessage('renumbering')
             # renumber interview_sections
             # get current id, and content codes ordered by sequence
             sql = "SELECT id, primary_code, sequence_number, geom_source, section_code "
@@ -2858,7 +2928,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         if self.lwSectionList.count() == 0:
             self.lwProjectCodes.setDisabled(True)
             self.twSectionContent.setDisabled(True)
-        
+        # reset sort buttons
+        if self.lmbMode == 'Import':
+            self.setSectionSortButtons()
 
     #####################################################
     #           section selection and loading           #
@@ -2998,16 +3070,22 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         if self.lmbMode == 'Import':
             minRow = 0
             maxRow = self.lwSectionList.count() - 1
-            row = self.lwSectionList.currentRow()
-            if row == maxRow:
-                self.tbMoveUp.setEnabled(True)
-                self.tbMoveDown.setDisabled(True)
-            elif row == minRow:
-                self.tbMoveUp.setDisabled(True)
-                self.tbMoveDown.setEnabled(True)
+            if maxRow > 0:
+                row = self.lwSectionList.currentRow()
+                if row == maxRow:
+                    self.tbMoveUp.setEnabled(True)
+                    self.tbMoveDown.setDisabled(True)
+                elif row == minRow:
+                    self.tbMoveUp.setDisabled(True)
+                    self.tbMoveDown.setEnabled(True)
+                else:
+                    self.tbMoveUp.setEnabled(True)
+                    self.tbMoveDown.setEnabled(True)
+                self.tbSort.setEnabled(True)
             else:
-                self.tbMoveUp.setEnabled(True)
-                self.tbMoveDown.setEnabled(True)
+                self.tbMoveUp.setDisabled(True)
+                self.tbMoveDown.setDisabled(True)
+                self.tbSort.setDisabled(True)
             
     #
     # load section record

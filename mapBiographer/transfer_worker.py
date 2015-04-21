@@ -275,7 +275,7 @@ class transferContent(QtCore.QObject):
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
         sql += "data_security, interviewer, date_modified FROM interviews "
-        sql += "WHERE data_status == 'RC'"
+        sql += "WHERE data_status == 'T'"
         rs = cur.execute(sql)
         intvList = rs.fetchall()
         intCnt = len(intvList)
@@ -578,7 +578,7 @@ class transferContent(QtCore.QObject):
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
         sql += "data_security, interviewer, date_modified FROM interviews "
-        sql += "WHERE data_status == 'RC'"
+        sql += "WHERE data_status == 'T'"
         rs = cur.execute(sql)
         intvList = rs.fetchall()
         x = 0
@@ -620,7 +620,7 @@ class transferContent(QtCore.QObject):
         sql += "b.media_start_time, b.media_end_time, b.data_security, "
         sql += "b.media_files, b.date_modified "
         sql += "FROM interviews a, interview_sections b "
-        sql += "WHERE a.id = b.interview_id AND a.data_status == 'RC'"
+        sql += "WHERE a.id = b.interview_id AND a.data_status == 'T'"
         rs = cur.execute(sql)
         secList = rs.fetchall()
         x = 0
@@ -650,25 +650,27 @@ class transferContent(QtCore.QObject):
                 toyV = 'SE'
                 toyM = sec[7]
             # get geometry or reference
+            geom_source = ''
             if sec[10] == 'pt':
                 sql = "SELECT id, interview_id, section_id, section_code, "
                 sql += "AsGeoJSON(geom) FROM points WHERE section_code = '%s'" % sec[3]
                 rs = cur.execute(sql)
-                geoText = rs.fetchall()[0][4]
+                the_geom = json.loads(rs.fetchall()[0][4])
             elif sec[10] == 'ln':
                 sql = "SELECT id, interview_id, section_id, section_code, "
                 sql += "AsGeoJSON(geom) FROM lines WHERE section_code = '%s'" % sec[3]
                 rs = cur.execute(sql)
-                geoText = rs.fetchall()[0][4]
+                the_geom = json.loads(rs.fetchall()[0][4])
             elif sec[10] == 'pl':
                 sql = "SELECT id, interview_id, section_id, section_code, "
                 sql += "AsGeoJSON(geom) FROM polygons WHERE section_code = '%s'" % sec[3]
                 rs = cur.execute(sql)
-                geoText = rs.fetchall()[0][4]
+                the_geom = json.loads(rs.fetchall()[0][4])
             elif sec[10] == 'ns':
-                geoText = ''
+                the_geom = ''
             else:
-                geoText = sec[10]
+                the_geom = ''
+                geom_source = sec[10]
             # copy media files
             imageInfo = []
             if not sec[15] is None and sec[15] <> '':
@@ -691,7 +693,7 @@ class transferContent(QtCore.QObject):
                 'date_time':dtV,'date_time_start':dtS,'date_time_end':dtE, \
                 'time_of_year':toyV,'time_of_year_months':toyM, \
                 'spatial_data_source':sec[8],'spatial_data_scale':sec[9],
-                'geomText':geoText,'content_codes':sec[11], \
+                'the_geom':the_geom,'geom_source': geom_source, 'content_codes':sec[11], \
                 'media_start_time':sec[12],'media_end_time':sec[13], \
                 'data_security':sec[14],'media_files':imageInfo,'date_modified':sec[16]}
         # interviewees
@@ -701,7 +703,7 @@ class transferContent(QtCore.QObject):
         sql = "SELECT a.id, a.interview_id, a.participant_id, "
         sql += "a.community, a.family, a.date_modified "
         sql += "FROM interviewees a, interviews b "
-        sql += "WHERE a.interview_id = b.id AND b.data_status == 'RC'"
+        sql += "WHERE a.interview_id = b.id AND b.data_status == 'T'"
         rs = cur.execute(sql)
         intvEList = rs.fetchall()
         x = 0
@@ -726,7 +728,7 @@ class transferContent(QtCore.QObject):
         sql += "a.note, a.date_modified "
         sql += "FROM participants a, interviewees b, interviews c "
         sql += "WHERE a.id = b.participant_id AND "
-        sql += "b.interview_id = c.id AND c.data_status == 'RC'"
+        sql += "b.interview_id = c.id AND c.data_status == 'T'"
         rs = cur.execute(sql)
         partList = rs.fetchall()
         x = 0
@@ -753,7 +755,7 @@ class transferContent(QtCore.QObject):
         sql += "a.province, a.country, a.postal_code, a.date_modified "
         sql += "FROM addresses a, participants b, interviewees c, interviews d "
         sql += "WHERE b.id = a.participant_id AND b.id = c.participant_id AND "
-        sql += "c.interview_id = d.id AND d.data_status == 'RC'"
+        sql += "c.interview_id = d.id AND d.data_status == 'T'"
         rs = cur.execute(sql)
         addrList = rs.fetchall()
         x = 0
@@ -778,7 +780,7 @@ class transferContent(QtCore.QObject):
         sql += "a.telecom, a.date_modified "
         sql += "FROM telecoms a, participants b, interviewees c, interviews d "
         sql += "WHERE b.id = a.participant_id AND b.id = c.participant_id AND "
-        sql += "c.interview_id = d.id AND d.data_status == 'RC'"
+        sql += "c.interview_id = d.id AND d.data_status == 'T'"
         rs = cur.execute(sql)
         teleList = rs.fetchall()
         x = 0
@@ -834,7 +836,7 @@ class transferContent(QtCore.QObject):
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
         sql += "data_security, interviewer, date_modified FROM interviews "
-        sql += "WHERE data_status == 'RC'"
+        sql += "WHERE data_status == 'T'"
         rs = cur.execute(sql)
         intvList = rs.fetchall()
         intCnt = len(intvList)

@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_collector.ui'
 #
-# Created: Fri Apr 10 09:58:42 2015
+# Created: Mon Apr 20 11:08:53 2015
 #      by: PyQt4 UI code generator 4.11.2
 #
 # WARNING! All changes made in this file will be lost!
@@ -196,6 +196,7 @@ class Ui_mapbioCollector(object):
         self.lwSectionList.setObjectName(_fromUtf8("lwSectionList"))
         self.vlSectionList.addWidget(self.lwSectionList)
         self.hlSectionOrderButtons = QtGui.QHBoxLayout()
+        self.hlSectionOrderButtons.setSpacing(2)
         self.hlSectionOrderButtons.setSizeConstraint(QtGui.QLayout.SetDefaultConstraint)
         self.hlSectionOrderButtons.setObjectName(_fromUtf8("hlSectionOrderButtons"))
         self.tbMoveUp = QtGui.QToolButton(self.frSectionControls)
@@ -208,6 +209,12 @@ class Ui_mapbioCollector(object):
         self.tbMoveDown.setArrowType(QtCore.Qt.DownArrow)
         self.tbMoveDown.setObjectName(_fromUtf8("tbMoveDown"))
         self.hlSectionOrderButtons.addWidget(self.tbMoveDown)
+        self.tbSort = QtGui.QToolButton(self.frSectionControls)
+        self.tbSort.setEnabled(False)
+        self.tbSort.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        self.tbSort.setArrowType(QtCore.Qt.NoArrow)
+        self.tbSort.setObjectName(_fromUtf8("tbSort"))
+        self.hlSectionOrderButtons.addWidget(self.tbSort)
         self.vlSectionList.addLayout(self.hlSectionOrderButtons)
         self.lblCodeList = QtGui.QLabel(self.frSectionControls)
         self.lblCodeList.setMinimumSize(QtCore.QSize(100, 0))
@@ -718,6 +725,8 @@ class Ui_mapbioCollector(object):
         self.tbMoveUp.setText(_translate("mapbioCollector", "...", None))
         self.tbMoveDown.setToolTip(_translate("mapbioCollector", "Move section down", None))
         self.tbMoveDown.setText(_translate("mapbioCollector", "...", None))
+        self.tbSort.setToolTip(_translate("mapbioCollector", "Reorder sections", None))
+        self.tbSort.setText(_translate("mapbioCollector", "Ro", None))
         self.lblCodeList.setText(_translate("mapbioCollector", "Code List", None))
         self.lwProjectCodes.setToolTip(_translate("mapbioCollector", "List of content codes. Click to select and hold Ctrl + click to set content code", None))
         self.lwProjectCodes.setSortingEnabled(False)

@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_importer.ui'
 #
-# Created: Fri Apr 10 10:14:54 2015
+# Created: Fri Apr 17 21:01:36 2015
 #      by: PyQt4 UI code generator 4.11.2
 #
 # WARNING! All changes made in this file will be lost!
@@ -284,8 +284,8 @@ class Ui_mapbioImporter(object):
         self.lblSpatialDataSource.setText(_translate("mapbioImporter", "Spatial Data Source", None))
         self.cbSpatialDataSource.setItemText(0, _translate("mapbioImporter", "Paper Map", None))
         self.cbSpatialDataSource.setItemText(1, _translate("mapbioImporter", "On Screen", None))
-        self.cbSpatialDataSource.setItemText(2, _translate("mapbioImporter", "Corrected GPS", None))
-        self.cbSpatialDataSource.setItemText(3, _translate("mapbioImporter", "Handheld GPS", None))
+        self.cbSpatialDataSource.setItemText(2, _translate("mapbioImporter", "Handheld GPS", None))
+        self.cbSpatialDataSource.setItemText(3, _translate("mapbioImporter", "Corrected GPS", None))
         self.lblSpatialDataScale.setText(_translate("mapbioImporter", "Spatial Data Scale", None))
         self.lblContentCodes.setText(_translate("mapbioImporter", "Content Codes Field:", None))
 

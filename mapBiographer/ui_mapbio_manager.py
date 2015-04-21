@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_manager.ui'
 #
-# Created: Tue Apr 14 16:52:35 2015
+# Created: Thu Apr 16 16:15:23 2015
 #      by: PyQt4 UI code generator 4.11.2
 #
 # WARNING! All changes made in this file will be lost!
@@ -26,7 +26,7 @@ except AttributeError:
 class Ui_mapbioManager(object):
     def setupUi(self, mapbioManager):
         mapbioManager.setObjectName(_fromUtf8("mapbioManager"))
-        mapbioManager.resize(843, 664)
+        mapbioManager.resize(796, 664)
         self.gridLayout2 = QtGui.QGridLayout(mapbioManager)
         self.gridLayout2.setObjectName(_fromUtf8("gridLayout2"))
         self.twMapBioSettings = QtGui.QTabWidget(mapbioManager)
@@ -361,7 +361,7 @@ class Ui_mapbioManager(object):
         self.tbxParticipants.setMinimumSize(QtCore.QSize(0, 365))
         self.tbxParticipants.setObjectName(_fromUtf8("tbxParticipants"))
         self.pgBasicInfo = QtGui.QWidget()
-        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 803, 260))
+        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 756, 260))
         self.pgBasicInfo.setObjectName(_fromUtf8("pgBasicInfo"))
         self.gridLayout_15 = QtGui.QGridLayout(self.pgBasicInfo)
         self.gridLayout_15.setMargin(0)
@@ -650,7 +650,7 @@ class Ui_mapbioManager(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.tblInterviews.sizePolicy().hasHeightForWidth())
         self.tblInterviews.setSizePolicy(sizePolicy)
-        self.tblInterviews.setMinimumSize(QtCore.QSize(0, 150))
+        self.tblInterviews.setMinimumSize(QtCore.QSize(0, 100))
         self.tblInterviews.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
         self.tblInterviews.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         self.tblInterviews.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
@@ -664,10 +664,10 @@ class Ui_mapbioManager(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.tbxInterview.sizePolicy().hasHeightForWidth())
         self.tbxInterview.setSizePolicy(sizePolicy)
-        self.tbxInterview.setMinimumSize(QtCore.QSize(0, 305))
+        self.tbxInterview.setMinimumSize(QtCore.QSize(0, 315))
         self.tbxInterview.setObjectName(_fromUtf8("tbxInterview"))
         self.pgIntBasic = QtGui.QWidget()
-        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 790, 242))
+        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 756, 245))
         self.pgIntBasic.setObjectName(_fromUtf8("pgIntBasic"))
         self.gridLayout_19 = QtGui.QGridLayout(self.pgIntBasic)
         self.gridLayout_19.setMargin(0)
@@ -792,10 +792,20 @@ class Ui_mapbioManager(object):
         self.cbInterviewSecurity.addItem(_fromUtf8(""))
         self.cbInterviewSecurity.addItem(_fromUtf8(""))
         self.glInterview.addWidget(self.cbInterviewSecurity, 2, 3, 1, 1)
+        self.lblStatus = QtGui.QLabel(self.pgIntBasic)
+        self.lblStatus.setObjectName(_fromUtf8("lblStatus"))
+        self.glInterview.addWidget(self.lblStatus, 5, 2, 1, 1)
+        self.cbInterviewStatus = QtGui.QComboBox(self.pgIntBasic)
+        self.cbInterviewStatus.setObjectName(_fromUtf8("cbInterviewStatus"))
+        self.cbInterviewStatus.addItem(_fromUtf8(""))
+        self.cbInterviewStatus.addItem(_fromUtf8(""))
+        self.cbInterviewStatus.addItem(_fromUtf8(""))
+        self.cbInterviewStatus.addItem(_fromUtf8(""))
+        self.glInterview.addWidget(self.cbInterviewStatus, 5, 3, 1, 1)
         self.gridLayout_19.addLayout(self.glInterview, 0, 0, 1, 1)
         self.tbxInterview.addItem(self.pgIntBasic, _fromUtf8(""))
         self.pgIntParticipants = QtGui.QWidget()
-        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 546, 143))
+        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 756, 245))
         self.pgIntParticipants.setObjectName(_fromUtf8("pgIntParticipants"))
         self.gridLayout0 = QtGui.QGridLayout(self.pgIntParticipants)
         self.gridLayout0.setMargin(0)
@@ -983,7 +993,8 @@ class Ui_mapbioManager(object):
         mapbioManager.setTabOrder(self.leInterviewLocation, self.pteInterviewNote)
         mapbioManager.setTabOrder(self.pteInterviewNote, self.cbInterviewSecurity)
         mapbioManager.setTabOrder(self.cbInterviewSecurity, self.leInterviewer)
-        mapbioManager.setTabOrder(self.leInterviewer, self.tblInterviewParticipants)
+        mapbioManager.setTabOrder(self.leInterviewer, self.cbInterviewStatus)
+        mapbioManager.setTabOrder(self.cbInterviewStatus, self.tblInterviewParticipants)
         mapbioManager.setTabOrder(self.tblInterviewParticipants, self.pbIntPartNew)
         mapbioManager.setTabOrder(self.pbIntPartNew, self.pbIntPartSave)
         mapbioManager.setTabOrder(self.pbIntPartSave, self.pbIntPartCancel)
@@ -993,6 +1004,10 @@ class Ui_mapbioManager(object):
         mapbioManager.setTabOrder(self.leIntPartCommunity, self.leIntPartFamily)
         mapbioManager.setTabOrder(self.leIntPartFamily, self.teAbout)
         mapbioManager.setTabOrder(self.teAbout, self.pbDialogClose)
+        mapbioManager.setTabOrder(self.pbDialogClose, self.cbDefaultCode)
+        mapbioManager.setTabOrder(self.cbDefaultCode, self.cbPointCode)
+        mapbioManager.setTabOrder(self.cbPointCode, self.cbLineCode)
+        mapbioManager.setTabOrder(self.cbLineCode, self.cbPolygonCode)
 
     def retranslateUi(self, mapbioManager):
         mapbioManager.setWindowTitle(_translate("mapbioManager", "Dialog", None))
@@ -1139,6 +1154,11 @@ class Ui_mapbioManager(object):
         self.cbInterviewSecurity.setItemText(0, _translate("mapbioManager", "Public", None))
         self.cbInterviewSecurity.setItemText(1, _translate("mapbioManager", "Community", None))
         self.cbInterviewSecurity.setItemText(2, _translate("mapbioManager", "Private", None))
+        self.lblStatus.setText(_translate("mapbioManager", "Interview Status", None))
+        self.cbInterviewStatus.setItemText(0, _translate("mapbioManager", "New", None))
+        self.cbInterviewStatus.setItemText(1, _translate("mapbioManager", "Completed", None))
+        self.cbInterviewStatus.setItemText(2, _translate("mapbioManager", "Transcribed", None))
+        self.cbInterviewStatus.setItemText(3, _translate("mapbioManager", "Uploaded", None))
         self.tbxInterview.setItemText(self.tbxInterview.indexOf(self.pgIntBasic), _translate("mapbioManager", "Interview Information", None))
         self.lblIntPartCommunity.setText(_translate("mapbioManager", "Community", None))
         self.lblIntPartFamily.setText(_translate("mapbioManager", "Family Group", None))

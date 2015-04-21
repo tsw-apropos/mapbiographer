@@ -2236,6 +2236,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         #
         self.interviewClearValues()
         self.interviewEnableEdit()
+        self.cbInterviewStatus.setCurrentIndex(0)
         self.pgIntParticipants.setDisabled(True)
         sql = "SELECT max(id) FROM interviews;"
         rs = self.cur.execute(sql)
@@ -2275,7 +2276,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.intvId = int(self.tblInterviews.item(row,0).text())
         sql = "SELECT id, project_id, code, start_datetime, end_datetime, "
         sql += "description, interview_location, note, tags, data_status, "
-        sql += "data_security, interviewer, date_created, date_modified "
+        sql += "data_security, interviewer, date_created, date_modified  "
         sql += "FROM interviews WHERE id = %d" % self.intvId
         rs = self.cur.execute(sql)
         intvData = rs.fetchall()
@@ -2287,6 +2288,14 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.pteInterviewNote.setPlainText(intvData[0][7])
         self.leInterviewTags.setText(intvData[0][8])
         self.interviewStatus = intvData[0][9]
+        if self.interviewStatus == 'U':
+            self.cbInterviewStatus.setCurrentIndex(3)
+        elif self.interviewStatus == 'T':
+            self.cbInterviewStatus.setCurrentIndex(2)
+        elif self.interviewStatus == 'C':
+            self.cbInterviewStatus.setCurrentIndex(1)
+        else:
+            self.cbInterviewStatus.setCurrentIndex(0)
         if intvData[0][10] == 'PU':
             self.cbInterviewSecurity.setCurrentIndex(0)
         elif intvData[0][10] == 'CO':
@@ -2327,6 +2336,15 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             security = 'PR'
         else:
             security = 'PU'
+        # data status
+        if self.cbInterviewStatus.currentIndex() == 0:
+            self.interviewStatus = 'N'
+        elif self.cbInterviewStatus.currentIndex() == 1:
+            self.interviewStatus = 'C'
+        elif self.cbInterviewStatus.currentIndex() == 2:
+            self.interviewStatus = 'T'
+        elif self.cbInterviewStatus.currentIndex() == 3:
+            self.interviewStatus = 'U'
         # interviewer
         interviewer = self.leInterviewer.text()
         if self.intvDate == None or self.intvDate == '':
@@ -2348,7 +2366,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 sql += "VALUES (%d, %d, " % (self.intvId, self.projId)
                 sql += "'%s', '%s', '%s', "% (code, startDate, endDate)
                 sql += "'%s', '%s', " % (description, location)
-                sql += "'%s', '%s', '%s', " % (note, tags, 'N')
+                sql += "'%s', '%s', '%s', " % (note, tags, self.interviewStatus)
                 sql += "'%s', '%s', '%s', '%s');" % (security, interviewer, createDate, modDate)
                 rCnt = self.tblInterviews.rowCount()
                 self.tblInterviews.setRowCount(rCnt+1)

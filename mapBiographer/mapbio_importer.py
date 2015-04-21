@@ -179,7 +179,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         # validate content code values
         validCodes = True
         if self.cbContentCodes.currentText() <> '--None--':
-            idx = self.fieldDict[self.cbTags.currentText()][0]
+            idx = self.fieldDict[self.cbContentCodes.currentText()][0]
             problemCodes = []
             for feature in features:
                 attrs = feature.attributes()
@@ -187,7 +187,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
                 for code in featCodes:
                     if not code.strip() in validCodeList:
                         if not str(attrs[idx]) in problemCodes:
-                            problemCodes.append(tag.strip())
+                            problemCodes.append(code.strip())
             if len(problemCodes) > 0:
                 validCodes = False
         # validate date times
@@ -201,7 +201,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             for code in codeList:
                 validDatesTimesList.append(code.split('=')[0].strip())
             # check import source
-            idx = self.fieldDict[self.cbUsePeriod.currentText()][0]
+            idx = self.fieldDict[self.cbDatesTimes.currentText()][0]
             problemDatesTimes = []
             for feature in features:
                 attrs = feature.attributes()
@@ -214,7 +214,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         validTimeOfYear = True
         if self.cbTimeOfYear.currentText() <> '--None--':
             # get reference info
-            validTimeOfYearList = ['R','U','N','SP','SE','Y']
+            validTimeOfYearList = ['R','U','N','SP']
             sql = "SELECT times_of_year FROM project"
             rs = self.cur.execute(sql)
             codeList = rs.fetchall()[0][0].split('\n')
@@ -255,7 +255,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         else:
             problemsExist = True
             f.write('Invalid content code values in field %s:\n' % self.cbContentCodes.currentText())
-            for code in problemTags:
+            for code in problemCodes:
                 f.write(code + '\n')
         f.write('\n')
         if validDatesTimes:
@@ -372,15 +372,15 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         self.importDict['notes'] = ''
         cnt = self.lwNFields.count()
         for x in range(cnt):
-            self.importDict['notes'] = self.importDict['notes'] + self.lwNFields.item(x).text() + ','
+            self.importDict['notes'] = self.importDict['notes'] + self.lwNFields.item(x).text() + ', '
         if len(self.importDict['notes']) > 0:
-            self.importDict['notes'] = self.importDict['notes'][:-1]
+            self.importDict['notes'] = self.importDict['notes'][:-2]
         self.importDict['sections'] = ''
         cnt = self.lwSFields.count()
         for x in range(cnt):
-            self.importDict['sections'] = self.importDict['sections'] + self.lwSFields.item(x).text() + ','
+            self.importDict['sections'] = self.importDict['sections'] + self.lwSFields.item(x).text() + ', '
         if len(self.importDict['sections']) > 0:
-            self.importDict['sections'] = self.importDict['sections'][:-1]
+            self.importDict['sections'] = self.importDict['sections'][:-2]
         if self.cbSpatialDataSource.currentIndex() == 0:
             self.importDict['spatialDataSource'] = 'PM'
         elif self.cbSpatialDataSource.currentIndex() == 1:
