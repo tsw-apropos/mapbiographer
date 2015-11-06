@@ -39,8 +39,6 @@ class lmbMapToolLine(QgsMapTool):
         # control variables
         self.started = False
         self.firstTimeOnSegment = True
-        self.dragging = False
-        self.dragStart = time.time()
         # related to temp output but function unclear
         self.prevPoint = None
     
@@ -66,7 +64,6 @@ class lmbMapToolLine(QgsMapTool):
                                       "      ++.++     ",
                                       "       +.+      "]))
                                   
- 
     #
     # track when delete is released to permit deletion of last point
     
@@ -76,69 +73,54 @@ class lmbMapToolLine(QgsMapTool):
             self.rb.removeLastPoint()
 
     #
-    # canvas click events
-
-    def canvasPressEvent(self,event):
-
-        if event.button() == 1:
-            self.dragging = True
-            self.dragStart = time.time()
-
-    #
     # canvas move events
      
     def canvasMoveEvent(self,event):
 
-        if self.dragging == True:
-            self.canvas.panAction(event)
-        else:
-            if self.started:
-                #Get the click
-                x = event.pos().x()
-                y = event.pos().y()
-                eventPoint = QtCore.QPoint(x,y)
-                layer = self.canvas.currentLayer()
-                if layer <> None:
-                   point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
-                   self.rb.movePoint(point)
+        if self.started:
+            #Get the click
+            x = event.pos().x()
+            y = event.pos().y()
+            eventPoint = QtCore.QPoint(x,y)
+            layer = self.canvas.currentLayer()
+            if layer <> None:
+               point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+               self.rb.movePoint(point)
 
     #
     # canvas release events
     
     def canvasReleaseEvent(self,event):
 
-        diff = 0
-        if self.dragging == True:
-            self.dragging = False
-            self.canvas.panActionEnd(event.pos())
-            diff = time.time() - self.dragStart
-        # if drag time is very short then assume that this was a click
-        if diff < 0.5:
-            # left click
-            if event.button() == 1:
-                # select the current layer
-                layer = self.canvas.currentLayer()
-                # if it is the start of a line set the rubberband up
-                if self.started == False:
-                    self.rb = QgsRubberBand(self.canvas, layer.geometryType())
-                    self.rb.setColor(QtGui.QColor('#ff0000'))
-                    self.rb.setWidth(1)
-                    self.rb.setOpacity(0.5)
-                    self.started = True
-                # get coordinates if we are connecting to an editable layer
-                if layer <> None:
-                    x = event.pos().x()
-                    y = event.pos().y()
-                    selPoint = QtCore.QPoint(x,y)
-                    # create point
-                    point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
-                    # put rubber band at cursor
-                    self.rb.movePoint(point)
-                    # set new point
-                    self.appendPoint(point)
-            # right click
-            elif event.button() == 2:
-                self.sendGeometry()
+        # left click
+        if event.button() == 1:
+            # select the current layer
+            layer = self.canvas.currentLayer()
+            # if it is the start of a line set the rubberband up
+            if self.started == False:
+                self.rb = QgsRubberBand(self.canvas, layer.geometryType())
+                self.rb.setColor(QtGui.QColor('#ff0000'))
+                self.rb.setWidth(1)
+                self.rb.setOpacity(0.5)
+                self.started = True
+            # get coordinates if we are connecting to an editable layer
+            if layer <> None:
+                x = event.pos().x()
+                y = event.pos().y()
+                selPoint = QtCore.QPoint(x,y)
+                # create point
+                point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+                #if self.transform <> None:
+                #    newPoint = self.transform.transform(point)
+                #else:
+                #    newPoint = point
+                # put rubber band at cursor
+                self.rb.movePoint(point)
+                # set new point
+                self.appendPoint(point)
+        # right click
+        elif event.button() == 2:
+            self.sendGeometry()
   
     #
     # append point

@@ -10,19 +10,19 @@
 [general]
 name=LOUIS Map Biographer
 qgisMinimumVersion=2.8
-description=Effectively conduct direct to digital map biographies and traditional land use studies. Requires pyspatialite, pyaudio and pydub libraries. Install the required libraries before installing this plugin.
+description=Effectively conduct direct to digital map biographies and traditional land use studies. Requires the pyaudio libary and oggenc. Install the required libraries before installing this plugin.
 about=The goal for LOUIS Map Biographer is to provide the quality and elegance of paper based interviews but deliver real time and cost savings by allowing effective and rapid direct-to-digital data capture by a single interviewer.
-    This is an experimental release and your help is needed to realize this goal so comments and suggestions are welcome.
-version=0.9.6.1
+    This is a release candidate and is not compatible with earlier versions.
+version=1.0.6
 author=Apropos Information Systems Inc.
-email=info@aproposinfosystems.com
+email=info@louistoolkit.ca
 
 # end of mandatory metadata
 
 # Optional items:
 
 # Uncomment the following line and add your changelog entries:
-# changelog=
+changelog=Minor fixes in Manager app and tweaks to Collector.
 
 # tags are comma separated with spaces allowed
 tags=Aboriginal, Indigenous, Traditional Knowledge, Traditional Land Use, Interviews, Use and Occupancy Mapping, Heritage, Local Knowledge

@@ -24,7 +24,7 @@
 from qgis.core import *
 from PyQt4 import QtCore, QtGui
 import traceback, datetime, time, os, math, sys
-import pyaudio, pydub, wave
+import pyaudio, wave
 
 #
 # setup audio thread
@@ -35,7 +35,7 @@ class audioRecorder(QtCore.QObject):
     #
     # initialize worker
 
-    def __init__( self, afPrefix, audioDeviceIndex, paRecordInstance, intCode, *args, **kwargs ):
+    def __init__( self, dirName, afPrefix, audioDeviceIndex, paRecordInstance, afName, *args, **kwargs ):
 
         QtCore.QObject.__init__(self, *args, **kwargs)
         self.state = 'Initialized'
@@ -43,8 +43,9 @@ class audioRecorder(QtCore.QObject):
         self.abort = False
         self.merge = False
         self.afPrefix = afPrefix
+        self.dirName = dirName
         self.partNum = 1
-        self.intCode = intCode
+        self.afName = afName
         self.audioDeviceIndex = audioDeviceIndex
         self.paRecordInstance = paRecordInstance
         #
@@ -164,31 +165,31 @@ class audioRecorder(QtCore.QObject):
     def consolidateRecordings(self):
 
         # get list of audio files
-        s = QtCore.QSettings()
-        dirName = s.value('mapBiographer/projectDir')
-        contents = os.listdir(dirName)
-        cCnt = len(self.intCode)
-        match1 = [elem for elem in contents if elem[:cCnt] == self.intCode]
+        contents = os.listdir(os.path.join(self.dirName,"media"))
+        cCnt = len(self.afName)
+        match1 = [elem for elem in contents if elem[:cCnt] == self.afName]
         inFiles = [elem for elem in match1 if elem[len(elem)-4:] == '.wav']
         inFiles.sort()
-        outFName = os.path.join(dirName,self.intCode+'.wav')
+        outFName = self.afPrefix+'.wav'
         if len(inFiles) == 1:
             # rename existing file
-            os.rename(os.path.join(dirName,inFiles[0]),outFName)
+            os.rename(os.path.join(self.dirName,"media",inFiles[0]),outFName)
         elif len(inFiles) > 1   :
-            # read in audio files
-            x = 0
-            for inFile in inFiles:
-                seg1 = pydub.AudioSegment.from_wav(os.path.join(dirName,inFile))
-                if x == 0:
-                    combined = seg1
-                    x = 1
-                else:
-                    combined = combined + seg1
-            combined.export(outFName, format="wav")
+            output = wave.open(outFName, 'wb')
+            x = 1
+            for infile in inFiles:
+                fileName = os.path.join(self.dirName,"media",infile)
+                w = wave.open(fileName, 'rb')
+                # write output file
+                if x == 1:
+                    output.setparams(w.getparams())
+                    x += 1
+                output.writeframes(w.readframes(w.getnframes()))
+                w.close()
+            output.close()
             # delete source files
             for inFile in inFiles:
-                os.remove(os.path.join(dirName,inFile))
+                os.remove(os.path.join(self.dirName,"media",inFile))
 
     # set class signals
     status = QtCore.pyqtSignal(str)

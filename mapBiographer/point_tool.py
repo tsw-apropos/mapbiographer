@@ -38,8 +38,6 @@ class lmbMapToolPoint(QgsMapTool):
         self.canvas = canvas
         # control variables
         self.started = False
-        self.dragging = False
-        self.dragStart = time.time()
     
         # custom cursor
         self.cursor = QtGui.QCursor(QtGui.QPixmap(["16 16 3 1",
@@ -64,74 +62,64 @@ class lmbMapToolPoint(QgsMapTool):
                                       "       +.+      "]))
                                   
     #
-    # canvas click events
-
-    def canvasPressEvent(self,event):
-
-        if event.button() == 1:
-            self.dragging = True
-            self.dragStart = time.time()
-
-    #
     # canvas move events
      
     def canvasMoveEvent(self,event):
 
-        if self.dragging == True:
-            self.canvas.panAction(event)
-        else:
-            if self.started:
-                #Get the click
-                x = event.pos().x()
-                y = event.pos().y()
-                eventPoint = QtCore.QPoint(x,y)
-                layer = self.canvas.currentLayer()
-                if layer <> None:
-                   point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
-                   self.rb.movePoint(point)
+        if self.started:
+            #Get the click
+            x = event.pos().x()
+            y = event.pos().y()
+            eventPoint = QtCore.QPoint(x,y)
+            layer = self.canvas.currentLayer()
+            if layer <> None:
+               point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+               self.rb.movePoint(point)
 
     #
     # canvas release events
     
     def canvasReleaseEvent(self,event):
 
-        diff = 0
-        if self.dragging == True:
-            self.dragging = False
-            self.canvas.panActionEnd(event.pos())
-            diff = time.time() - self.dragStart
-        # if drag time is very short then assume that this was a click
-        if diff < 0.5:
-            # left click
-            if event.button() == 1:
-                # select the current layer
-                layer = self.canvas.currentLayer()
-                # if it is the start of a point set the rubberband up
-                if self.started == False:
-                    # define rubber band
-                    self.rb = QgsRubberBand(self.canvas, QGis.Point)
-                    self.rb.setIconSize(8)
-                    self.rb.setOpacity(0.5)
-                    self.rb.setIcon(self.rb.ICON_CIRCLE)
-                    self.rb.setColor(QtGui.QColor('#ff0000'))
-                    self.started = True
-                # get coordinates if we are connecting to an editable layer
-                if layer <> None:
-                    x = event.pos().x()
-                    y = event.pos().y()
-                    #selPoint = QtCore.QPoint(x,y)
-                    # create point
-                    point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
-                    # add point
-                    if self.rb.size() > 0:
-                        self.rb.removeLastPoint()
-                    # put rubber band at cursor
-                    self.rb.movePoint(point)
-                    g = QgsGeometry().fromPoint(point)
-                    if g <> None and g.isGeosValid():
-                        self.started = False
-                        self.rbFinished.emit(g) 
+        # left click
+        if event.button() == 1:
+            # select the current layer
+            layer = self.canvas.currentLayer()
+            # if it is the start of a point set the rubberband up
+            if self.started == False:
+                # define rubber band
+                self.rb = QgsRubberBand(self.canvas, QGis.Point)
+                self.rb.setIconSize(8)
+                self.rb.setOpacity(0.5)
+                self.rb.setIcon(self.rb.ICON_CIRCLE)
+                self.rb.setColor(QtGui.QColor('#ff0000'))
+                self.started = True
+            # get coordinates if we are connecting to an editable layer
+            if layer <> None:
+                x = event.pos().x()
+                y = event.pos().y()
+                point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+                # add point
+                if self.rb.size() > 0:
+                    self.rb.removeLastPoint()
+                # put rubber band at cursor
+                self.rb.movePoint(point)
+                # send geometry
+                self.sendGeometry(point)
   
+    #
+    # send geometry in the correct projection
+      
+    def sendGeometry(self, point):
+
+        layer = self.canvas.currentLayer() 
+        transformedPoint = self.canvas.mapRenderer().mapToLayerCoordinates( layer, point )
+
+        g = QgsGeometry().fromPoint(transformedPoint)
+        if g <> None and g.isGeosValid():
+            self.started = False
+            self.rbFinished.emit(g) 
+
     #
     # activate tool
     

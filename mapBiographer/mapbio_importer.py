@@ -25,23 +25,21 @@ from PyQt4 import QtCore, QtGui
 from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
-from pyspatialite import dbapi2 as sqlite
-import os, datetime, time
+import os, datetime, time, inspect, re
 from ui_mapbio_importer import Ui_mapbioImporter
-import inspect, re
 
 class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
 
     #
     # init method to define globals and make widget / method connections
     
-    def __init__(self, iface, conn, cur, dirName):
+    def __init__(self, iface, projDict, intvDict, dirName):
         QtGui.QDialog.__init__(self)
         self.setupUi(self)
         self.iface = iface
-        self.conn = conn
-        self.cur = cur
         self.dirName = dirName
+        self.projDict = projDict
+        self.intvDict = intvDict
 
         # debug setup
         self.debug = False
@@ -67,34 +65,17 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         QtCore.QObject.connect(self.tbAddSectionField, QtCore.SIGNAL("clicked()"), self.addSectionField)
         QtCore.QObject.connect(self.tbRemoveSectionField, QtCore.SIGNAL("clicked()"), self.removeSectionField)
         # disable import when these things change
+        QtCore.QObject.connect(self.cbLegacyCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbSectionCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbPrimaryCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbContentCodes, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbTags, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
-        QtCore.QObject.connect(self.cbDatesTimes, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
+        QtCore.QObject.connect(self.cbRecordingDate, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
+        QtCore.QObject.connect(self.cbUsePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
-
-        # clear controls and enter basic defaults
-        self.cbPrimaryCode.clear()
-        self.cbPrimaryCode.addItem('--None--')
-        self.cbSectionCode.clear()
-        self.cbSectionCode.addItem('--Create On Import--')
-        self.cbSecurity.clear()
-        self.cbSecurity.addItem('--None--')
-        self.cbContentCodes.clear()
-        self.cbContentCodes.addItem('--None--')
-        self.cbTags.clear()
-        self.cbTags.addItem('--None--')
-        self.cbDatesTimes.clear()
-        self.cbDatesTimes.addItem('--None--')
-        self.cbTimeOfYear.clear()
-        self.cbTimeOfYear.addItem('--None--')
-        self.lwANFields.clear()
-        self.lwNFields.clear()
-        self.lwASFields.clear()
-        self.lwSFields.clear()
-
+        # 
+        self.clearFieldLists()
         # disable import button
         self.pbImport.setDisabled(True)
 
@@ -104,6 +85,35 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
     def disableImport(self):
 
         self.pbImport.setDisabled(True)
+
+    #
+    # clear comboboxes
+    #
+    def clearFieldLists(self):
+        # clear controls and enter basic defaults
+        self.cbPrimaryCode.clear()
+        self.cbPrimaryCode.addItem('--None--')
+        self.cbLegacyCode.clear()
+        self.cbLegacyCode.addItem('--None--')
+        self.cbSectionCode.clear()
+        self.cbSectionCode.addItem('--Create On Import--')
+        self.cbSecurity.clear()
+        self.cbSecurity.addItem('--None--')
+        self.cbContentCodes.clear()
+        self.cbContentCodes.addItem('--None--')
+        self.cbTags.clear()
+        self.cbTags.addItem('--None--')
+        self.cbRecordingDate.clear()
+        self.cbRecordingDate.addItem('--None--')
+        self.cbUsePeriod.clear()
+        self.cbUsePeriod.addItem('--None--')
+        self.cbTimeOfYear.clear()
+        self.cbTimeOfYear.addItem('--None--')
+        self.lwANFields.clear()
+        self.lwNFields.clear()
+        self.lwASFields.clear()
+        self.lwSFields.clear()
+
 
     #
     # select source file and populate controls
@@ -120,10 +130,12 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             fields = self.inputLayer.dataProvider().fields().toList()
             x = 0
             self.fieldDict = {}
+            self.clearFieldLists()
             for field in fields:
                 self.fieldDict[field.name()] = [x,field.typeName()]
                 if field.typeName() == 'String':
                     self.cbPrimaryCode.addItem(field.name())
+                    self.cbLegacyCode.addItem(field.name())
                     self.cbSectionCode.addItem(field.name())
                     self.cbSecurity.addItem(field.name())
                     self.cbContentCodes.addItem(field.name())
@@ -131,11 +143,12 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
                     self.cbTimeOfYear.addItem(field.name())
                     self.lwANFields.addItem(field.name())
                     self.lwASFields.addItem(field.name())
-                    self.cbDatesTimes.addItem(field.name())
+                    self.cbUsePeriod.addItem(field.name())
+                    self.cbRecordingDate.addItem(field.name())
                 elif field.typeName() == 'Integer':
-                    self.cbSectionCode.addItem(field.name())
+                    self.cbLegacyCode.addItem(field.name())
                 elif field.typeName() == 'Real':
-                    self.cbSectionCode.addItem(field.name())
+                    self.cbLegacyCode.addItem(field.name())
                 x += 1
             self.pbValidate.setEnabled(True)
         self.disableImport()
@@ -146,95 +159,119 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
     def validateInputs(self):
 
         features = self.inputLayer.getFeatures()
-        sql = "SELECT content_codes FROM project"
-        rs = self.cur.execute(sql)
-        codeList = rs.fetchall()[0][0].split('\n')
+        codeList = self.projDict["default_codes"]
         validCodeList = []
         for code in codeList:
-            validCodeList.append(code.split('=')[0].strip())
-        # validate primary code values
+            validCodeList.append(code[0])
+        # validate section code values
+        validSection = True
         validContent = True
-        if self.cbPrimaryCode.currentText() <> '--None--':
-            idx = self.fieldDict[self.cbPrimaryCode.currentText()][0]
-            problemContent = []
-            for feature in features:
-                attrs = feature.attributes()
-                if not str(attrs[idx]) in validCodeList:
-                    if not str(attrs[idx]) in problemContent:
-                        problemContent.append(str(attrs[idx]))
-            if len(problemContent) > 0:
-                validContent = False
-        # validate security values
         validSecurity = True
-        if self.cbSecurity.currentText() <> '--None--':
-            idx = self.fieldDict[self.cbSecurity.currentText()][0]
-            problemSecurity = []
-            for feature in features:
-                attrs = feature.attributes()
-                if not str(attrs[idx]) in ['PU','CO','PR']:
-                    if not str(attrs[idx]) in problemSecurity:
-                        problemSecurity.append(str(attrs[idx]))
-            if len(problemSecurity) > 0:
-                validSecurity = False
-        # validate content code values
         validCodes = True
+        validUsePeriod = True
+        validTimeOfYear = True
+        validRecordingDate = True
+        # get reference info
+        validUsePeriodList = ['R','U','N']
+        codeList = self.projDict["default_time_periods"]
+        for code in codeList:
+            validUsePeriodList.append(code[0])
+        validTimeOfYearList = ['R','U','N','SP']
+        codeList = self.projDict["default_time_of_year"]
+        for code in codeList:
+            validTimeOfYearList.append(code[0])
+        # get field indexes
+        if self.cbSectionCode.currentText() <> '--Create On Import--':
+            SectionIdx = self.fieldDict[self.cbSectionCode.currentText()][0]
+        else:
+            SectionIdx = -1
+        if self.cbPrimaryCode.currentText() <> '--None--':
+            PrimaryIdx = self.fieldDict[self.cbPrimaryCode.currentText()][0]
+        else:
+            PrimaryIdx = -1
+        if self.cbSecurity.currentText() <> '--None--':
+            SecurityIdx = self.fieldDict[self.cbSecurity.currentText()][0]
+        else:
+            SecurityIdx = -1
         if self.cbContentCodes.currentText() <> '--None--':
-            idx = self.fieldDict[self.cbContentCodes.currentText()][0]
-            problemCodes = []
-            for feature in features:
-                attrs = feature.attributes()
-                featCodes = str(attrs[idx]).split(',')
+            ContentIdx = self.fieldDict[self.cbContentCodes.currentText()][0]
+        else:
+            ContentIdx = -1
+        if self.cbUsePeriod.currentText() <> '--None--':
+            UsePeriodIdx = self.fieldDict[self.cbUsePeriod.currentText()][0]
+        else:
+            UsePeriodIdx = -1
+        if self.cbTimeOfYear.currentText() <> '--None--':
+            TimeOfYearIdx = self.fieldDict[self.cbTimeOfYear.currentText()][0]
+        else:
+            TimeOfYearIdx = -1
+        if self.cbRecordingDate.currentText() <> '--None--':
+            RecordingDateIdx = self.fieldDict[self.cbRecordingDate.currentText()][0]
+        else:
+            RecordingDateIdx = -1
+        # create lists to record problems
+        problemSections = []
+        problemContent = []
+        problemSecurity = []
+        problemCodes = []
+        problemUsePeriod = []
+        problemTimeOfYear = []
+        problemRecordingDate = []
+        # step through features and identify problems
+        for feature in features:
+            attrs = feature.attributes()
+            if SectionIdx <> -1:
+                testVal = re.findall(r'\D+', str(attrs[SectionIdx]))[0]
+                if not testVal in validCodeList:
+                    problemSections.append(str(attrs[SectionIdx]))
+            if PrimaryIdx <> -1:
+                testVal = str(attrs[PrimaryIdx])
+                if not testVal in validCodeList:
+                    if not testVal in problemContent:
+                        problemContent.append(testVal)
+            if SecurityIdx <> -1:
+                testVal = str(attrs[SecurityIdx])
+                if not testVal in ['PU','CO','PR']:
+                    if not testVal in problemSecurity:
+                        problemSecurity.append(testVal)
+            if ContentIdx <> -1:
+                featCodes = str(attrs[ContentIdx]).split(',')
                 for code in featCodes:
                     if not code.strip() in validCodeList:
-                        if not str(attrs[idx]) in problemCodes:
+                        if not code.strip() in problemCodes:
                             problemCodes.append(code.strip())
-            if len(problemCodes) > 0:
-                validCodes = False
-        # validate date times
-        validDatesTimes = True
-        if self.cbDatesTimes.currentText() <> '--None--':
-            # get reference info
-            validDatesTimesList = ['R','U','N']
-            sql = "SELECT dates_and_times FROM project"
-            rs = self.cur.execute(sql)
-            codeList = rs.fetchall()[0][0].split('\n')
-            for code in codeList:
-                validDatesTimesList.append(code.split('=')[0].strip())
-            # check import source
-            idx = self.fieldDict[self.cbDatesTimes.currentText()][0]
-            problemDatesTimes = []
-            for feature in features:
-                attrs = feature.attributes()
-                if not str(attrs[idx]) in validDatesTimesList:
-                    if not str(attrs[idx]) in problemDatesTimes:
-                        problemDatesTimes.append(str(attrs[idx]))
-            if len(problemDatesTimes) > 0:
-                validDatesTimes = False
-        # validate time of year
-        validTimeOfYear = True
-        if self.cbTimeOfYear.currentText() <> '--None--':
-            # get reference info
-            validTimeOfYearList = ['R','U','N','SP']
-            sql = "SELECT times_of_year FROM project"
-            rs = self.cur.execute(sql)
-            codeList = rs.fetchall()[0][0].split('\n')
-            for code in codeList:
-                validTimeOfYearList.append(code.split('=')[0].strip())
-            # check import source
-            idx = self.fieldDict[self.cbTimeOfYear.currentText()][0]
-            problemTimeOfYear = []
-            for feature in features:
-                attrs = feature.attributes()
-                if not str(attrs[idx]) in validTimeOfYearList:
-                    if not str(attrs[idx]) in problemTimeOfYear:
-                        problemTimeOfYear.append(str(attrs[idx]))
-            if len(problemTimeOfYear) > 0:
-                validTimeOfYear = False
-        # write report
+            if UsePeriodIdx <> -1:
+                testVal = str(attrs[UsePeriodIdx])
+                if not testVal in validUsePeriodList:
+                    if not testVal in problemUsePeriod:
+                        problemUsePeriod.append(testVal)
+            if TimeOfYearIdx <> -1:
+                testVal = str(attrs[TimeOfYearIdx])
+                if not testVal in validTimeOfYearList:
+                    if not testVal in problemTimeOfYear:
+                        problemTimeOfYear.append(testVal)
+            if RecordingDateIdx <> -1:
+                testVal = str(attrs[RecordingDateIdx])
+                try:
+                    tDate = datetime.datetime.strptime(testVal, "%Y-%m-%d %H:%M")
+                except:
+                    try:
+                        tDate = datetime.datetime.strptime(testVal, "%Y-%m-%d")
+                    except:
+                        problemRecordingDate.append(testVal)
+        # assess and report
+        problemsExist = False
         fname = os.path.join(self.dirName,datetime.datetime.now().isoformat()[:-16]+'lmb_import_validation.log')
         f = open(fname,'w')
-        problemsExist = False
-        if validContent:
+        if len(problemSections) == 0:
+            f.write('Section codes valid or unused\n')
+        else:
+            problemsExist = True
+            f.write('Invalid section codes values in field %s:\n' % self.cbSectionCode.currentText())
+            for code in problemSections:
+                f.write(code + '\n')
+        f.write('\n')
+        if len(problemContent) == 0:
             f.write('Primary code valid or unused\n')
         else:
             problemsExist = True
@@ -242,7 +279,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             for code in problemContent:
                 f.write(code + '\n')
         f.write('\n')
-        if validSecurity:
+        if len(problemSecurity) == 0:
             f.write('Security codes valid or unused\n')
         else:
             problemsExist = True
@@ -250,7 +287,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             for code in problemSecurity:
                 f.write(code + '\n')
         f.write('\n')
-        if validCodes:
+        if len(problemCodes) == 0:
             f.write('Content codes valid or unused\n')
         else:
             problemsExist = True
@@ -258,20 +295,29 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             for code in problemCodes:
                 f.write(code + '\n')
         f.write('\n')
-        if validDatesTimes:
-            f.write('Dates and Times valid or unused\n')
+        if len(problemUsePeriod) == 0:
+            f.write('Use period valid or unused\n')
         else:
             problemsExist = True
-            f.write('Invalid date and times values in field %s:\n' % self.cbDatesTimes.currentText())
-            for code in problemUsePeriods:
+            f.write('Invalid use period values in field %s:\n' % self.cbDatesTimes.currentText())
+            for code in problemUsePeriod:
                 f.write(code + '\n')
         f.write('\n')
-        if validTimeOfYear:
+        if len(problemTimeOfYear) == 0:
             f.write('Time of year valid or unused\n')
         else:
             problemsExist = True
             f.write('Invalid time of year values in field %s:\n' % self.cbTimeOfYear.currentText())
             for code in problemTimeOfYear:
+                f.write(code + '\n')
+        f.write('\n')
+        if len(problemRecordingDate) == 0:
+            f.write('Recording date valid or unused\n')
+        else:
+            problemsExist = True
+            f.write('Invalid recording date values in field %s.\n' % self.cbRecordingDate.currentText())
+            f.write('Must be formatted as YYYY-MM-DD HH:MM or YYYY-MM-DD.\nProblems values were:\n')
+            for code in problemRecordingDate:
                 f.write(code + '\n')
         f.close()
         if problemsExist:
@@ -363,24 +409,26 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         self.importDict = {}
         self.importDict['source'] = self.leSourceFile.text()
         self.importDict['primaryCode'] = self.cbPrimaryCode.currentText()
+        self.importDict['legacyCode'] = self.cbLegacyCode.currentText()
         self.importDict['sectionCode'] = self.cbSectionCode.currentText()
         self.importDict['security'] = self.cbSecurity.currentText()
         self.importDict['contentCodes'] = self.cbContentCodes.currentText()
         self.importDict['tags'] = self.cbTags.currentText()
-        self.importDict['datesTimes'] = self.cbDatesTimes.currentText()
+        self.importDict['usePeriod'] = self.cbUsePeriod.currentText()
         self.importDict['timeOfYear'] = self.cbTimeOfYear.currentText()
+        self.importDict['recordingDate'] = self.cbRecordingDate.currentText()
         self.importDict['notes'] = ''
         cnt = self.lwNFields.count()
         for x in range(cnt):
-            self.importDict['notes'] = self.importDict['notes'] + self.lwNFields.item(x).text() + ', '
+            self.importDict['notes'] = self.importDict['notes'] + self.lwNFields.item(x).text() + ','
         if len(self.importDict['notes']) > 0:
-            self.importDict['notes'] = self.importDict['notes'][:-2]
+            self.importDict['notes'] = self.importDict['notes'][:-1]
         self.importDict['sections'] = ''
         cnt = self.lwSFields.count()
         for x in range(cnt):
-            self.importDict['sections'] = self.importDict['sections'] + self.lwSFields.item(x).text() + ', '
+            self.importDict['sections'] = self.importDict['sections'] + self.lwSFields.item(x).text() + ','
         if len(self.importDict['sections']) > 0:
-            self.importDict['sections'] = self.importDict['sections'][:-2]
+            self.importDict['sections'] = self.importDict['sections'][:-1]
         if self.cbSpatialDataSource.currentIndex() == 0:
             self.importDict['spatialDataSource'] = 'PM'
         elif self.cbSpatialDataSource.currentIndex() == 1:

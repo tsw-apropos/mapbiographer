@@ -22,21 +22,19 @@
 """
 
 from PyQt4 import QtCore, QtGui
+from PyQt4.QtGui import QWheelEvent
 from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
-from pyspatialite import dbapi2 as sqlite
-import os, datetime, time
-import pyaudio, wave, pydub
+import os, datetime, time, json, inspect, re
 from ui_mapbio_navigator import Ui_mapbioNavigator
-import inspect, re
 
 class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
 
     #
     # init method to define globals and make widget / method connections
     
-    def __init__(self, iface):
+    def __init__(self, iface, baseGroups, boundaryLayerName, enableReference, referenceLayerName):
 
         self.debug = False
         if self.debug:
@@ -50,19 +48,21 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         self.setupUi(self)
         self.iface = iface
         self.canvas = self.iface.mapCanvas()
-        self.setWindowTitle('LMB - Navigator')
+        self.setWindowTitle('LMB - Layers')
         # project settings
-        self.baseGroups = []
-        self.baseGroupIdxs = []
-        self.boundaryLayerName = ''
+        self.projectTree = []
+        self.baseGroups = baseGroups
+        self.baseGroupIdxs = range(len(baseGroups))
+        self.boundaryLayerName = boundaryLayerName
         self.boundaryLayer = None
-        self.enableReference = ''
-        self.referenceLayerName = ''
+        self.enableReference = enableReference
+        self.referenceLayerName = referenceLayerName
         self.referenceLayer = None
         self.points_layer = None
         self.lines_layer = None
         self.polygons_layer = None
         self.projectLoading = False
+        self.defaultBase = ''
         # add panel
         self.iface.mainWindow().addDockWidget(QtCore.Qt.LeftDockWidgetArea, self)
         # panel functionality
@@ -71,103 +71,91 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
         # signals and slots setup
         # map options
         QtCore.QObject.connect(self.cbBase, QtCore.SIGNAL("currentIndexChanged(int)"), self.selectBase)
-        QtCore.QObject.connect(self.pbBoundary, QtCore.SIGNAL("clicked()"), self.viewBoundary)
-        QtCore.QObject.connect(self.pbReference, QtCore.SIGNAL("clicked()"), self.viewReference)
-        QtCore.QObject.connect(self.pbViewFeatures, QtCore.SIGNAL("clicked()"), self.viewFeatures)
-        QtCore.QObject.connect(self.pbFeatureLabels, QtCore.SIGNAL("clicked()"), self.viewFeatureLabels)
-        QtCore.QObject.connect(self.pbZoomFull, QtCore.SIGNAL("clicked()"), self.zoomFull)
-        QtCore.QObject.connect(self.pbZoomToStudyArea, QtCore.SIGNAL("clicked()"), self.zoomToStudyArea)
-        QtCore.QObject.connect(self.pbZoomIn, QtCore.SIGNAL("clicked()"), self.canvas.zoomIn)
-        QtCore.QObject.connect(self.pbZoomOut, QtCore.SIGNAL("clicked()"), self.canvas.zoomOut)
+        QtCore.QObject.connect(self.cbBoundary, QtCore.SIGNAL("stateChanged(int)"), self.viewBoundary)
+        QtCore.QObject.connect(self.cbReference, QtCore.SIGNAL("stateChanged(int)"), self.viewReference)
+        QtCore.QObject.connect(self.cbFeatures, QtCore.SIGNAL("stateChanged(int)"), self.viewFeatures)
+        QtCore.QObject.connect(self.cbLabels, QtCore.SIGNAL("stateChanged(int)"), self.viewFeatureLabels)
         # track scale
         self.canvas.scale()
         # open project
-        result = self.readSettings()
-        #self.loadLayers()
+
         # set canvas view
         if self.boundaryLayer <> None:
             self.canvas.setExtent(self.boundaryLayer.extent())
         else:
             self.canvas.zoomToFullExtent()
 
-
+    #
     #####################################################
     #           project and panel management            #
     #####################################################
 
     #
-    # read QGIS settings
-
-    def readSettings(self):
-
-        if self.debug == True:
-            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
-
-        # method body
-        s = QtCore.QSettings()
-        rv = s.value('mapBiographer/baseGroups')
-        if len(rv) > 0:
-            self.baseGroups = rv
-            self.baseGroupIdxs = range(len(rv))
-        else:
-            self.baseGroups = []
-            self.baseGroupIdxs = []
-            return(-1)
-        rv = s.value('mapBiographer/boundaryLayer')
-        if rv <> '':
-            self.boundaryLayerName = rv
-        else:
-            self.boundaryLayerName = ''
-            return(-1)
-        rv = s.value('mapBiographer/enableReference')
-        if rv == 'True':
-            self.enableReference = True
-        else:
-            self.enableReference = False
-        rv = s.value('mapBiographer/referenceLayer')
-        if rv <> '':
-            self.referenceLayerName = rv
-        else:
-            self.enableReference = False
-            self.referenceLayerName = ''
-
-        return(0)
+    # load legend tree
+    #
+    def loadLegendTree(self, root):
+        tree = []
+        for child in root.children():
+            if isinstance(child, QgsLayerTreeGroup):
+                tree.append(['group',child.name(),'layers',self.loadLegendTree(child)])
+            elif isinstance(child, QgsLayerTreeLayer):
+                tree.append(['layer',child.layerName(),child.layerId(),child.layer()])
+        return(tree)
 
     #
-    # load layers
-    
-    def loadLayers(self):
+    # add group contents to overview
+    #
+    def addGroupContentsToOverview(self,group):
+
+        for item in group:
+            if item[0] == 'group':
+                self.addGroupContentsToOverview(item[3])
+            elif not 'OPENLAYERS' in item[2].upper():
+                # prevent non-cached layers to be used in overview
+                self.iface.setActiveLayer(item[3])
+                self.iface.actionAddToOverview().activate(0)
+
+    #
+    # load base layers
+    #
+    def loadBaseLayers(self):
 
         if self.debug == True:
             QgsMessageLog.logMessage('mapNavigator: '+self.myself())
 
         self.projectLoading = True
         # groups
+        root = QgsProject.instance().layerTreeRoot()
+        self.projectTree = self.loadLegendTree(root)
         projectGroups = self.iface.legendInterface().groups()
         # set index to identify difference between stored setting list and project index
         for group in self.baseGroups:
             self.baseGroupIdxs[self.baseGroups.index(group)] = projectGroups.index(group)
         self.cbBase.clear()
         self.cbBase.addItems(self.baseGroups)
+        # clear overview
+        self.iface.actionRemoveAllFromOverview().activate(0)
         # check against settings to determine if we can proceed
         visibleGroupSet = False
-        for group in self.baseGroups:
-            idx = projectGroups.index(group)
-            if not (group in projectGroups):
-                return(-1)
-            elif visibleGroupSet == False:
-                if self.iface.legendInterface().isGroupVisible(idx):
-                    self.cbBase.setCurrentIndex(self.baseGroups.index(group))
-                    visibleGroupSet = True
-            else:
-                self.iface.legendInterface().setGroupVisible(idx,False)
+        for item in self.projectTree:
+            if item[0] == 'group':
+                idx = projectGroups.index(item[1])
+                if not (group in projectGroups):
+                    return(-1)
+                elif visibleGroupSet == False:
+                    if self.iface.legendInterface().isGroupVisible(idx):
+                        self.defaultBase = self.baseGroups.index(item[1])
+                        visibleGroupSet = True
+                        #self.addGroupContentsToOverview(item[3])
+                        self.cbBase.setCurrentIndex(self.defaultBase)
+                else:
+                    self.iface.legendInterface().setGroupVisible(idx,False)
         # layers
         validLayers = []
         layers = self.iface.legendInterface().layers()
         self.points_layer = None
         self.lines_layer = None
         self.polygons_layer = None
-        self.iface.actionRemoveAllFromOverview().activate(0)
         for layer in layers:
             validLayers.append(layer.name())
             if layer.name() == self.boundaryLayerName:
@@ -175,17 +163,47 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 if self.iface.legendInterface().isLayerVisible(layer):
                     self.iface.setActiveLayer(layer)
                     self.iface.actionAddToOverview().activate(0)
-                    self.pbBoundary.setText('Hide Boundary')
+                    self.cbBoundary.setChecked(True)
                 else:
-                    self.pbBoundary.setText('Show Boundary')
+                    self.cbBoundary.setChecked(False)
             if layer.name() == self.referenceLayerName:
                 self.referenceLayer = layer
                 if self.iface.legendInterface().isLayerVisible(layer):
-                    self.pbReference.setText('Hide Reference')
+                    self.cbReference.setChecked(True)
                     self.iface.setActiveLayer(layer)
                     self.iface.actionAddToOverview().activate(0)
                 else:
-                    self.pbReference.setText('Show Reference')
+                    self.cbReference.setChecked(False)
+        # boundary layer
+        if not (self.boundaryLayerName in validLayers):
+            return(-1)
+        # reference layer
+        if self.enableReference == True:
+            self.cbReference.setEnabled(True)
+            if not (self.referenceLayerName in validLayers):
+                return(-1)
+        else:
+            self.cbReference.setDisabled(True)
+        # reset show / hide button
+        self.cbFeatures.setChecked(True)
+        self.cbLabels.setChecked(True)
+        self.projectLoading = False
+
+    
+    #
+    # load interview layers
+    #
+    def loadInterviewLayers(self):
+        
+        if self.debug == True:
+            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
+        validLayers = []
+        layers = self.iface.legendInterface().layers()
+        self.points_layer = None
+        self.lines_layer = None
+        self.polygons_layer = None
+        for layer in layers:
+            validLayers.append(layer.name())
             if layer.name() == 'lmb_points':
                 self.points_layer = layer
                 self.iface.setActiveLayer(layer)
@@ -198,29 +216,24 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 self.polygons_layer = layer
                 self.iface.setActiveLayer(layer)
                 self.iface.actionAddToOverview().activate(0)
-        # boundary layer
-        if not (self.boundaryLayerName in validLayers):
-            return(-1)
-        # reference layer
-        if self.enableReference == True:
-            self.pbReference.setEnabled(True)
-            if not (self.referenceLayerName in validLayers):
-                return(-1)
-        else:
-            self.pbReference.setDisabled(True)
-        # reset show / hide button
-        self.pbViewFeatures.setText('Hide Features')
-        self.pbFeatureLabels.setText('Hide Labels')
-        self.projectLoading = False
 
-    
+    #
     #####################################################
     #              base and reference maps              #
     #####################################################
+    #
+    # select default base
+    #
+    def selectDefaultBase(self):
+
+        if self.debug == True:
+            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
+        if self.defaultBase <> '':
+            self.cbBase.setCurrentIndex(self.defaultBase)
 
     #
-    # select base map
-
+    # select base map - this doesn't change overview
+    #
     def selectBase(self):
 
         if self.projectLoading == False:
@@ -234,61 +247,57 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                         self.iface.legendInterface().setGroupVisible(self.baseGroupIdxs[x],True)
                 elif self.iface.legendInterface().isGroupVisible(self.baseGroupIdxs[x]) == True:
                     self.iface.legendInterface().setGroupVisible(self.baseGroupIdxs[x],False)
-        
+
     #
     # view boundary layer
-
+    #
     def viewBoundary(self):
 
         if self.debug == True:
             QgsMessageLog.logMessage('mapNavigator: '+self.myself())
 
         if self.projectLoading == False:
-            if self.pbBoundary.text() == 'Hide Boundary':
+            if self.cbBoundary.isChecked() == False:
                 self.iface.legendInterface().setLayerVisible(self.boundaryLayer,False)
                 self.iface.setActiveLayer(self.boundaryLayer)
                 # remove from overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbBoundary.setText('Show Boundary')
             else:
                 self.iface.legendInterface().setLayerVisible(self.boundaryLayer,True)
                 self.iface.setActiveLayer(self.boundaryLayer)
                 # add to overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbBoundary.setText('Hide Boundary')
 
     #
     # view reference layer
-
+    #
     def viewReference(self):
 
         if self.debug == True:
             QgsMessageLog.logMessage('mapNavigator: '+self.myself())
 
         if self.projectLoading == False:
-            if self.pbReference.text() == 'Hide Reference':
+            if self.cbReference.isChecked() == False:
                 self.iface.legendInterface().setLayerVisible(self.referenceLayer,False)
                 self.iface.setActiveLayer(self.referenceLayer)
                 # remove from overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbReference.setText('Show Reference')
             else:
                 self.iface.legendInterface().setLayerVisible(self.referenceLayer,True)
                 self.iface.setActiveLayer(self.referenceLayer)
                 # add to overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbReference.setText('Hide Reference')
         
     #
     # view features
-
+    #
     def viewFeatures(self):
 
         if self.debug == True:
             QgsMessageLog.logMessage('mapNavigator: '+self.myself())
 
         if self.points_layer <> None and self.lines_layer <> None and self.polygons_layer <> None:
-            if self.pbViewFeatures.text() == 'Show Features':
+            if self.cbFeatures.isChecked():
                 self.iface.legendInterface().setLayerVisible(self.points_layer, True)
                 self.iface.setActiveLayer(self.points_layer)
                 # add to overview
@@ -301,7 +310,6 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 self.iface.setActiveLayer(self.polygons_layer)
                 # add to overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbViewFeatures.setText('Hide Features')
             else:
                 self.iface.legendInterface().setLayerVisible(self.points_layer, False)
                 self.iface.setActiveLayer(self.points_layer)
@@ -315,19 +323,17 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 self.iface.setActiveLayer(self.polygons_layer)
                 # remove from overview
                 self.iface.actionAddToOverview().activate(0)
-                self.pbViewFeatures.setText('Show Features')
             
     #
     # view feature labels
-
+    #
     def viewFeatureLabels(self):
 
         if self.debug == True:
             QgsMessageLog.logMessage('mapNavigator: '+self.myself())
 
         if self.points_layer <> None and self.lines_layer <> None and self.polygons_layer <> None:
-            if self.pbFeatureLabels.text() == 'Show Labels':
-                # polygons
+            if self.cbLabels.isChecked():
                 palyrPolygons = QgsPalLayerSettings()
                 palyrPolygons.readFromLayer(self.polygons_layer)
                 palyrPolygons.enabled = True
@@ -355,7 +361,6 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 palyrPoints.writeToLayer(self.points_layer)
                 # refresh
                 self.canvas.refresh()
-                self.pbFeatureLabels.setText('Hide Labels')
             else:
                 # polygons
                 palyrPolygons = QgsPalLayerSettings()
@@ -374,26 +379,4 @@ class mapBiographerNavigator(QtGui.QDockWidget, Ui_mapbioNavigator):
                 palyrPoints.writeToLayer(self.points_layer)
                 # refresh
                 self.canvas.refresh()
-                self.pbFeatureLabels.setText('Show Labels')
 
-    #
-    # zoom to features
-
-    def zoomFull(self):
-
-        if self.debug == True:
-            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
-
-        self.canvas.zoomToFullExtent()
-
-    #
-    # zoom to study area
-
-    def zoomToStudyArea(self):
-
-        if self.debug == True:
-            QgsMessageLog.logMessage('mapNavigator: '+self.myself())
-
-        self.iface.setActiveLayer(self.boundaryLayer)
-        self.iface.zoomToActiveLayer()
-        

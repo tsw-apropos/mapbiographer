@@ -24,8 +24,7 @@
 from qgis.core import *
 from PyQt4 import QtCore, QtGui
 import traceback, datetime, time, os, math, sys
-import pyaudio
-import wave
+import pyaudio, wave
 
 #
 # setup audio thread
