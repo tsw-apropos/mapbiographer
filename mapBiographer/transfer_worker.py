@@ -306,7 +306,7 @@ class transferContent(QtCore.QObject):
                 "rights_holder": docDict["rights_holder"],
                 "rights_statement": docDict["rights_statement"],
                 "creator": docDict["creator"],
-                "multimedia_source_file": "",
+                "multimedia_source_file": None,
                 "additional_files":[],
                 "date_modified": datetime.datetime.now().isoformat(),
                 "sections":{},
@@ -368,13 +368,23 @@ class transferContent(QtCore.QObject):
                     #toyM = value['time_of_year']
                 # process geom and geom source
                 if value['geom_source'] in ('pt','ln','pl'):
+                    #QgsMessageLog.logMessage(key)
                     geom = QgsGeometry.fromWkt(value["the_geom"])
                     if value['geom_source'] == 'pt':
-                        simpleGeom = QgsGeometry.fromPoint(geom.asMultiPoint()[0])
+                        if geom.isMultipart() == True:
+                            simpleGeom = QgsGeometry.fromPoint(geom.asMultiPoint()[0])
+                        else:
+                            simpleGeom = geom
                     elif value['geom_source'] == 'ln':
-                        simpleGeom = QgsGeometry.fromPolyline(geom.asMultiPolyline()[0])
+                        if geom.isMultipart() == True:
+                            simpleGeom = QgsGeometry.fromPolyline(geom.asMultiPolyline()[0])
+                        else:
+                            simpleGeom = geom
                     else:
-                        simpleGeom = QgsGeometry.fromPolygon(geom.asMultiPolygon()[0])
+                        if geom.isMultipart() == True:
+                            simpleGeom = QgsGeometry.fromPolygon(geom.asMultiPolygon()[0])
+                        else:
+                            simpleGeom = geom
                     geomText = json.loads(simpleGeom.exportToGeoJSON())
                     geomSource = ""
                 else:

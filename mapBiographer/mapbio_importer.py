@@ -40,6 +40,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         self.dirName = dirName
         self.projDict = projDict
         self.intvDict = intvDict
+        self.lastDir = dirName
 
         # debug setup
         self.debug = False
@@ -121,7 +122,8 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
     def selectSource(self):
 
         self.importDict = {}
-        fname = QtGui.QFileDialog.getOpenFileName(self, 'Select Shapefile', '.', '*.shp')
+        fname = QtGui.QFileDialog.getOpenFileName(self, 'Select Shapefile or GeoJSON file', self.lastDir, '*.shp *.geojson')
+        self.lastDir, temp = os.path.split(fname)
         if os.path.exists(fname):
             self.leSourceFile.setText(fname)
             # open layer
@@ -149,6 +151,8 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
                     self.cbLegacyCode.addItem(field.name())
                 elif field.typeName() == 'Real':
                     self.cbLegacyCode.addItem(field.name())
+                elif field.typeName() == 'Date':
+                    self.cbRecordingDate.addItem(field.name())
                 x += 1
             self.pbValidate.setEnabled(True)
         self.disableImport()
@@ -251,14 +255,26 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
                     if not testVal in problemTimeOfYear:
                         problemTimeOfYear.append(testVal)
             if RecordingDateIdx <> -1:
-                testVal = str(attrs[RecordingDateIdx])
                 try:
+                    testVal = str(attrs[RecordingDateIdx])
                     tDate = datetime.datetime.strptime(testVal, "%Y-%m-%d %H:%M")
                 except:
                     try:
                         tDate = datetime.datetime.strptime(testVal, "%Y-%m-%d")
                     except:
-                        problemRecordingDate.append(testVal)
+                        try:
+                            tDate = datetime.datetime.strptime(testVal, "%Y%m%d")
+                        except:
+                            try:
+                                testVal = attrs[RecordingDateIdx]
+                                if isinstance(testVal, QtCore.QDate) or isinstance(testVal, QtCore.QDateTime):
+                                    pass
+                                else:
+                                    raise
+                            except:
+                                testVal = attrs[RecordingDateIdx]
+                                if not testVal is None and not isinstance(testVal, QtCore.QPyNullVariant):
+                                    problemRecordingDate.append(testVal)
         # assess and report
         problemsExist = False
         fname = os.path.join(self.dirName,datetime.datetime.now().isoformat()[:-16]+'lmb_import_validation.log')
@@ -316,7 +332,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         else:
             problemsExist = True
             f.write('Invalid recording date values in field %s.\n' % self.cbRecordingDate.currentText())
-            f.write('Must be formatted as YYYY-MM-DD HH:MM or YYYY-MM-DD.\nProblems values were:\n')
+            f.write('Must be text field formatted as YYYY-MM-DD HH:MM or YYYY-MM-DD or date field.\nProblems values were:\n')
             for code in problemRecordingDate:
                 f.write(code + '\n')
         f.close()

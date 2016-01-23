@@ -14,5 +14,7 @@
         <file>zoom_out.png</file>
         <file>zoom_data.png</file>
         <file>zoom_area.png</file>
+        <file>red_line.png</file>
+        <file>red_polygon.png</file>
     </qresource>
 </RCC>

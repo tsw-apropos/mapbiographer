@@ -48,7 +48,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.frProgress.setVisible(False)
 
         # debug setup
-        self.debug = False
+        self.debug = True
         if self.debug:
             self.myself = lambda: inspect.stack()[1][3]
         if self.debug:

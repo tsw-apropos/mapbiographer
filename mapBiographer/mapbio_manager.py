@@ -25,8 +25,10 @@ from PyQt4 import QtCore, QtGui
 from qgis.core import *
 from ui_mapbio_manager import Ui_mapbioManager
 from mapbio_porter import mapBiographerPorter
-import os, datetime, time, json
+import os, datetime, time, json, sys
 import inspect, imp
+import platform, subprocess
+from qgis.utils import plugins
 
 class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     
@@ -94,6 +96,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         QtCore.QObject.connect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsSave)
         QtCore.QObject.connect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsCancel)
         QtCore.QObject.connect(self.pbDeleteProject, QtCore.SIGNAL("clicked()"), self.projectDelete)
+        QtCore.QObject.connect(self.pbSystemTest, QtCore.SIGNAL("clicked()"), self.qgsTestSystem)
         QtCore.QObject.connect(self.leOggEnc, QtCore.SIGNAL("textChanged(const QString&)"), self.qgsSettingsEnableEdit)
         # lmb project settings
         QtCore.QObject.connect(self.cbMaxScale, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectSetMapScaleDown)
@@ -118,6 +121,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         QtCore.QObject.connect(self.pteContentCodes, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteDateAndTime, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteTimeOfYear, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
+        QtCore.QObject.connect(self.tbSortCodes, QtCore.SIGNAL("clicked()"), self.projectSortCodeList)
         QtCore.QObject.connect(self.cbDefaultCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.cbPointCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.cbLineCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectDetailsEnableEdit)
@@ -293,10 +297,10 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                             ],
                             "default_time_periods": [],
                             "default_time_of_year": [],
-                            "ns_code": "",
-                            "pt_code": "",
-                            "ln_code": "",
-                            "pl_code": "",
+                            "ns_code": "S",
+                            "pt_code": "S",
+                            "ln_code": "S",
+                            "pl_code": "S",
                             "lmb_map_settings": {},
                             "documents": {}
                         }
@@ -327,6 +331,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             # enable save and cancel
             self.pbSaveSettings.setEnabled(True)
             self.pbCancelSettings.setEnabled(True)
+            self.pbSystemTest.setDisabled(True)
             if self.pbDeleteProject.isEnabled():
                 self.pbDeleteProject.setDisabled(True)
             self.twMapBioSettings.tabBar().setDisabled(True)
@@ -348,6 +353,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # disable save and cancel
         self.pbSaveSettings.setDisabled(True)
         self.pbCancelSettings.setDisabled(True)
+        self.pbSystemTest.setEnabled(True)
         if self.cbCurrentProject.count() > 2 and self.projId <> None:
             self.pbDeleteProject.setEnabled(True)
         self.twMapBioSettings.tabBar().setEnabled(True)
@@ -405,7 +411,145 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             self.oggencFile = ''
             self.leOggEnc.setText('')
         self.qgsSettingsEnableEdit()
+        
+    #   
+    # test system libraries and plugins
+    #
     
+    def qgsTestSystem(self):
+        
+        try:
+            # test basic audio
+            import pyaudio, wave
+            messageText = 'PyAudio is installed and audio is enabled.'
+            # test audio conversion
+            callList = [self.leOggEnc.text(),'--version']
+            try:
+                retText = subprocess.check_output(callList)
+                oggVer = retText[retText.rindex(' ')+1:-1]
+                messageText = messageText + ' Oggenc2 executable found. Version is %s.' % oggVer
+            except:
+                messageText = messageText + ' Oggenc2 executable could not be found.'
+            # test plugins
+            if 'redLayer' in plugins:
+                if 'joinmultiplelines' in plugins:
+                    messageText = messageText + ' The Red Layer and Multiline Join Plugins are installed.'
+                else:
+                    messageText = messageText + ' The Red Layer Plugin is installed but the Multiline Join plugin is missing.'
+                    messageText = messageText + ' Please install missing plugin.'
+            else:
+                if 'joinmultiplelines' in plugins:
+                    messageText = messageText + ' The Red Layer Plugin is missing. The Multiline Join plugin is installed.'
+                    messageText = messageText + ' Please install missing plugin.'
+                else:
+                    messageText = messageText + ' The Red Layer Plugin and the Multiline Join plugin are missing.'
+                    messageText = messageText + ' Please install missing plugins.'
+            QtGui.QMessageBox.information(self, 'System Status',
+                messageText, QtGui.QMessageBox.Ok)
+            return(0)
+        except:
+            messageText = 'PyAudio is not installed. Please install manually.'
+            # test audio conversion
+            callList = [self.leOggEnc.text(),'--version']
+            try:
+                retText = subprocess.check_output(callList)
+                oggVer = retText[retText.rindex(' ')+1:-1]
+                messageText = messageText + ' Oggenc2 executable found. Version is %s.' % oggVer
+            except:
+                messageText = messageText + ' Oggenc2 executable could not be found.'
+            # test plugins
+            if 'redLayer' in plugins:
+                if 'joinmultiplelines' in plugins:
+                    messageText = messageText + ' The Red Layer and Multiline Join Plugins are installed.'
+                else:
+                    messageText = messageText + ' The Red Layer Plugin is installed but the Multiline Join plugin is missing.'
+                    messageText = messageText + ' Please install missing plugin.'
+            else:
+                if 'joinmultiplelines' in plugins:
+                    messageText = messageText + ' The Red Layer Plugin is missing. The Multiline Join plugin is installed.'
+                    messageText = messageText + ' Please install missing plugin.'
+                else:
+                    messageText = messageText + ' The Red Layer Plugin and the Multiline Join plugin are missing.'
+                    messageText = messageText + ' Please install missing plugins.'
+            QtGui.QMessageBox.critical(self, 'Error',
+                messageText, QtGui.QMessageBox.Ok)
+            return(0)
+    #
+    # setup audio libraries
+    #
+    # NOTE: This is an experimental function and has too many dependecies to function
+    #       so it has been replaced with a simple test function above
+    #
+    #
+    #
+    def qgsSetupAudio(self):
+        
+        # test if pyaudio is present
+        try:
+            import pyaudio, wave
+            messageText = 'PyAudio is already installed and audio is enabled.'
+            QtGui.QMessageBox.information(self, 'Audio Enabled',
+                messageText, QtGui.QMessageBox.Ok)
+            return(0)
+        except:
+            pass
+        if platform.system().lower() == 'linux':
+            messageText = 'PyAudio is not installed. Please install manually.'
+            QtGui.QMessageBox.warning(self, 'Action Needed',
+                messageText, QtGui.QMessageBox.Ok)
+            return(0)
+        elif platform.system().lower() == 'windows':
+            # test if pip is present
+            try:
+                import pip
+                pip_present = True
+            except:
+                pip_present = False
+                messageText = 'Pip is not installed. Please install manually and try again.'
+                QtGui.QMessageBox.critical(self, 'Error',
+                    messageText, QtGui.QMessageBox.Ok)
+                return(0)            
+            if pip_present == True:
+                try:
+                    pip.main(['install','--user','pyaudio'])
+                    messageText = 'PyAudio was installed successfully. Audio is enabled.'
+                    QtGui.QMessageBox.information(self, 'Audio Installed',
+                        messageText, QtGui.QMessageBox.Ok)
+                    return(0)
+                except:
+                    messageText = 'Unable to install PyAudio. Please install manually.'
+                    QtGui.QMessageBox.critical(self, 'Error',
+                        messageText, QtGui.QMessageBox.Ok)
+                    return(0)
+            else:
+                return(0)
+        else:
+            # test if pip is present
+            try:
+                import pip
+                pip_present = True
+            except:
+                pip_present = False
+                messageText = 'Pip is not installed. Please install manually and try again.'
+                QtGui.QMessageBox.critical(self, 'Error',
+                    messageText, QtGui.QMessageBox.Ok)
+                return(0)            
+            if pip_present == True:
+                try:
+                    pip.main(['install','--user','pyaudio'])
+                    messageText = 'PyAudio was installed successfully. Audio is enabled.'
+                    QtGui.QMessageBox.information(self, 'Audio Installed',
+                        messageText, QtGui.QMessageBox.Ok)
+                    return(0)
+                except:
+                    messageText = 'Unable to install PyAudio. Please install manually.'
+                    QtGui.QMessageBox.critical(self, 'Error',
+                        messageText, QtGui.QMessageBox.Ok)
+                    return(0)
+            else:
+                return(0)
+            
+
     #
     ########################################################
     #                   LMB File Functions                 #
@@ -530,6 +674,16 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 codeList.append([parts[0].strip(),parts[1].strip()])
         
         return(codeList)
+        
+    #
+    # project sort code list
+    #
+    def projectSortCodeList(self):
+        
+        codeList = self.projectCodesTextToList(self.pteContentCodes.toPlainText())
+        codeList.sort()
+        self.pteContentCodes.setPlainText(self.projectCodesListToText(codeList))
+        
     #
     ########################################################
     #      Map Biographer Projects and Project Tabs        #
@@ -2029,6 +2183,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.tblInterviews.setColumnWidth(1,75)
         self.tblInterviews.setColumnWidth(2,120)
         self.tblInterviews.setColumnWidth(3,50)
+        self.tblInterviews.sortItems(0,QtCore.Qt.AscendingOrder)
 
     #
     # add / update interview record to interview table widget
@@ -2038,7 +2193,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # id
         item = QtGui.QTableWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-        item.setText(unicode(itDict["id"]))
+        item.setData(0,int(itDict["id"]))
         item.setToolTip('Map Biographer Interview Id')
         self.tblInterviews.setItem(x,0,item)
         # code
@@ -2208,6 +2363,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
+        #self.tblInterviews.sortItems(0,QtCore.Qt.AscendingOrder)
         self.interviewClearValues()
         self.interviewEnableEdit()
         self.intvIdMax += 1
@@ -2304,6 +2460,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 response = QtGui.QMessageBox.warning(self, 'Warning',
                    messageText, QtGui.QMessageBox.Ok )
             else:
+                del self.intvCodeList[self.intvCodeList.index(temp["code"])]
                 temp["code"] = nCode
                 self.intvCodeList.append(nCode)
                 saveOk = True
@@ -2352,7 +2509,9 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             QtGui.QMessageBox.warning(self, 'Warning',
                messageText, QtGui.QMessageBox.Ok)
         else:
+            docCode = self.projDict["projects"][str(self.projId)]["documents"][str(self.intvId)]["code"]
             del self.projDict["projects"][str(self.projId)]["documents"][str(self.intvId)]
+            del self.intvCodeList[self.intvCodeList.index(docCode)]
             self.projectFileSave()
             self.interviewClearValues()
             self.interviewDisableEdit()

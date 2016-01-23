@@ -2,8 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_navigator.ui'
 #
-# Created: Mon Apr 27 13:48:20 2015
-#      by: PyQt4 UI code generator 4.11.2
+# Created by: PyQt4 UI code generator 4.11.4
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -26,16 +25,20 @@ except AttributeError:
 class Ui_mapbioNavigator(object):
     def setupUi(self, mapbioNavigator):
         mapbioNavigator.setObjectName(_fromUtf8("mapbioNavigator"))
-        mapbioNavigator.resize(338, 142)
+        mapbioNavigator.resize(278, 227)
         self.dockWidgetContents = QtGui.QWidget()
         self.dockWidgetContents.setObjectName(_fromUtf8("dockWidgetContents"))
         self.gridLayout_2 = QtGui.QGridLayout(self.dockWidgetContents)
         self.gridLayout_2.setObjectName(_fromUtf8("gridLayout_2"))
-        self.horizontalLayout = QtGui.QHBoxLayout()
-        self.horizontalLayout.setObjectName(_fromUtf8("horizontalLayout"))
-        self.lblBase = QtGui.QLabel(self.dockWidgetContents)
-        self.lblBase.setObjectName(_fromUtf8("lblBase"))
-        self.horizontalLayout.addWidget(self.lblBase)
+        self.cbFeatures = QtGui.QCheckBox(self.dockWidgetContents)
+        self.cbFeatures.setObjectName(_fromUtf8("cbFeatures"))
+        self.gridLayout_2.addWidget(self.cbFeatures, 4, 0, 1, 1)
+        self.cbReference = QtGui.QCheckBox(self.dockWidgetContents)
+        self.cbReference.setObjectName(_fromUtf8("cbReference"))
+        self.gridLayout_2.addWidget(self.cbReference, 3, 0, 1, 1)
+        self.cbBoundary = QtGui.QCheckBox(self.dockWidgetContents)
+        self.cbBoundary.setObjectName(_fromUtf8("cbBoundary"))
+        self.gridLayout_2.addWidget(self.cbBoundary, 2, 0, 1, 1)
         self.cbBase = QtGui.QComboBox(self.dockWidgetContents)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -44,23 +47,13 @@ class Ui_mapbioNavigator(object):
         self.cbBase.setSizePolicy(sizePolicy)
         self.cbBase.setMinimumSize(QtCore.QSize(133, 0))
         self.cbBase.setObjectName(_fromUtf8("cbBase"))
-        self.horizontalLayout.addWidget(self.cbBase)
-        self.gridLayout_2.addLayout(self.horizontalLayout, 0, 0, 1, 1)
-        self.gridLayout = QtGui.QGridLayout()
-        self.gridLayout.setObjectName(_fromUtf8("gridLayout"))
-        self.cbBoundary = QtGui.QCheckBox(self.dockWidgetContents)
-        self.cbBoundary.setObjectName(_fromUtf8("cbBoundary"))
-        self.gridLayout.addWidget(self.cbBoundary, 0, 0, 1, 1)
-        self.cbFeatures = QtGui.QCheckBox(self.dockWidgetContents)
-        self.cbFeatures.setObjectName(_fromUtf8("cbFeatures"))
-        self.gridLayout.addWidget(self.cbFeatures, 0, 1, 1, 1)
-        self.cbReference = QtGui.QCheckBox(self.dockWidgetContents)
-        self.cbReference.setObjectName(_fromUtf8("cbReference"))
-        self.gridLayout.addWidget(self.cbReference, 1, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.cbBase, 1, 0, 1, 1)
+        self.lblBase = QtGui.QLabel(self.dockWidgetContents)
+        self.lblBase.setObjectName(_fromUtf8("lblBase"))
+        self.gridLayout_2.addWidget(self.lblBase, 0, 0, 1, 1)
         self.cbLabels = QtGui.QCheckBox(self.dockWidgetContents)
         self.cbLabels.setObjectName(_fromUtf8("cbLabels"))
-        self.gridLayout.addWidget(self.cbLabels, 1, 1, 1, 1)
-        self.gridLayout_2.addLayout(self.gridLayout, 1, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.cbLabels, 5, 0, 1, 1)
         mapbioNavigator.setWidget(self.dockWidgetContents)
 
         self.retranslateUi(mapbioNavigator)
@@ -68,9 +61,9 @@ class Ui_mapbioNavigator(object):
 
     def retranslateUi(self, mapbioNavigator):
         mapbioNavigator.setWindowTitle(_translate("mapbioNavigator", "LOUIS Map Biographer - Navigation", None))
-        self.lblBase.setText(_translate("mapbioNavigator", "Select Base Map:", None))
-        self.cbBoundary.setText(_translate("mapbioNavigator", "Show Boundary", None))
         self.cbFeatures.setText(_translate("mapbioNavigator", "Show Features", None))
         self.cbReference.setText(_translate("mapbioNavigator", "Show Reference", None))
+        self.cbBoundary.setText(_translate("mapbioNavigator", "Show Boundary", None))
+        self.lblBase.setText(_translate("mapbioNavigator", "Select Base Map:", None))
         self.cbLabels.setText(_translate("mapbioNavigator", "Show Feature Labels", None))
 

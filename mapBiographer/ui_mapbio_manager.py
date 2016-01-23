@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_manager.ui'
 #
-# Created by: PyQt4 UI code generator 4.11.1
+# Created by: PyQt4 UI code generator 4.11.4
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -25,12 +25,9 @@ except AttributeError:
 class Ui_mapbioManager(object):
     def setupUi(self, mapbioManager):
         mapbioManager.setObjectName(_fromUtf8("mapbioManager"))
-        mapbioManager.resize(788, 703)
-        self.gridLayout2 = QtGui.QGridLayout(mapbioManager)
-        self.gridLayout2.setObjectName(_fromUtf8("gridLayout2"))
-        self.pbDialogClose = QtGui.QPushButton(mapbioManager)
-        self.pbDialogClose.setObjectName(_fromUtf8("pbDialogClose"))
-        self.gridLayout2.addWidget(self.pbDialogClose, 1, 0, 1, 1)
+        mapbioManager.resize(788, 732)
+        self.gridLayout_14 = QtGui.QGridLayout(mapbioManager)
+        self.gridLayout_14.setObjectName(_fromUtf8("gridLayout_14"))
         self.twMapBioSettings = QtGui.QTabWidget(mapbioManager)
         self.twMapBioSettings.setObjectName(_fromUtf8("twMapBioSettings"))
         self.tbSettings = QtGui.QWidget()
@@ -84,6 +81,9 @@ class Ui_mapbioManager(object):
         self.pbDeleteProject.setEnabled(False)
         self.pbDeleteProject.setObjectName(_fromUtf8("pbDeleteProject"))
         self.hlSettingsButtons.addWidget(self.pbDeleteProject)
+        self.pbSystemTest = QtGui.QPushButton(self.tbSettings)
+        self.pbSystemTest.setObjectName(_fromUtf8("pbSystemTest"))
+        self.hlSettingsButtons.addWidget(self.pbSystemTest)
         self.gridLayout_3.addLayout(self.hlSettingsButtons, 1, 0, 1, 1)
         self.lnBelowLMBSettings = QtGui.QFrame(self.tbSettings)
         self.lnBelowLMBSettings.setFrameShape(QtGui.QFrame.HLine)
@@ -340,8 +340,8 @@ class Ui_mapbioManager(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.pteDateAndTime.sizePolicy().hasHeightForWidth())
         self.pteDateAndTime.setSizePolicy(sizePolicy)
-        self.pteDateAndTime.setMinimumSize(QtCore.QSize(0, 50))
-        self.pteDateAndTime.setMaximumSize(QtCore.QSize(16777215, 50))
+        self.pteDateAndTime.setMinimumSize(QtCore.QSize(0, 75))
+        self.pteDateAndTime.setMaximumSize(QtCore.QSize(16777215, 100))
         self.pteDateAndTime.setObjectName(_fromUtf8("pteDateAndTime"))
         self.vlContentCoding.addWidget(self.pteDateAndTime)
         self.lblTimeOfYear = QtGui.QLabel(self.frContentCode)
@@ -354,19 +354,25 @@ class Ui_mapbioManager(object):
         sizePolicy.setHeightForWidth(self.pteTimeOfYear.sizePolicy().hasHeightForWidth())
         self.pteTimeOfYear.setSizePolicy(sizePolicy)
         self.pteTimeOfYear.setMinimumSize(QtCore.QSize(0, 75))
-        self.pteTimeOfYear.setMaximumSize(QtCore.QSize(16777215, 75))
+        self.pteTimeOfYear.setMaximumSize(QtCore.QSize(16777215, 100))
         self.pteTimeOfYear.setObjectName(_fromUtf8("pteTimeOfYear"))
         self.vlContentCoding.addWidget(self.pteTimeOfYear)
+        self.horizontalLayout_3 = QtGui.QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(_fromUtf8("horizontalLayout_3"))
         self.lblContentCodes = QtGui.QLabel(self.frContentCode)
         self.lblContentCodes.setObjectName(_fromUtf8("lblContentCodes"))
-        self.vlContentCoding.addWidget(self.lblContentCodes)
+        self.horizontalLayout_3.addWidget(self.lblContentCodes)
+        self.tbSortCodes = QtGui.QToolButton(self.frContentCode)
+        self.tbSortCodes.setObjectName(_fromUtf8("tbSortCodes"))
+        self.horizontalLayout_3.addWidget(self.tbSortCodes)
+        self.vlContentCoding.addLayout(self.horizontalLayout_3)
         self.pteContentCodes = QtGui.QPlainTextEdit(self.frContentCode)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.MinimumExpanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.pteContentCodes.sizePolicy().hasHeightForWidth())
         self.pteContentCodes.setSizePolicy(sizePolicy)
-        self.pteContentCodes.setMinimumSize(QtCore.QSize(0, 50))
+        self.pteContentCodes.setMinimumSize(QtCore.QSize(0, 250))
         self.pteContentCodes.setMaximumSize(QtCore.QSize(16777215, 500))
         self.pteContentCodes.setObjectName(_fromUtf8("pteContentCodes"))
         self.vlContentCoding.addWidget(self.pteContentCodes)
@@ -585,7 +591,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_12.addLayout(self.gridLayout_11, 2, 0, 1, 1)
         self.tbxParticipants.addItem(self.pgBasicInfo, _fromUtf8(""))
         self.pgAddresses = QtGui.QWidget()
-        self.pgAddresses.setGeometry(QtCore.QRect(0, 0, 362, 234))
+        self.pgAddresses.setGeometry(QtCore.QRect(0, 0, 362, 248))
         self.pgAddresses.setObjectName(_fromUtf8("pgAddresses"))
         self.gridLayout_9 = QtGui.QGridLayout(self.pgAddresses)
         self.gridLayout_9.setMargin(0)
@@ -644,7 +650,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_9.addLayout(self.grAddresses, 1, 0, 1, 1)
         self.tbxParticipants.addItem(self.pgAddresses, _fromUtf8(""))
         self.pgTelecoms = QtGui.QWidget()
-        self.pgTelecoms.setGeometry(QtCore.QRect(0, 0, 362, 192))
+        self.pgTelecoms.setGeometry(QtCore.QRect(0, 0, 362, 200))
         self.pgTelecoms.setObjectName(_fromUtf8("pgTelecoms"))
         self.gridLayout_10 = QtGui.QGridLayout(self.pgTelecoms)
         self.gridLayout_10.setMargin(0)
@@ -882,7 +888,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_5.addLayout(self.glInterview, 0, 0, 1, 1)
         self.tbxInterview.addItem(self.pgIntBasic, _fromUtf8(""))
         self.pgIntExtra = QtGui.QWidget()
-        self.pgIntExtra.setGeometry(QtCore.QRect(0, 0, 198, 434))
+        self.pgIntExtra.setGeometry(QtCore.QRect(0, 0, 204, 452))
         self.pgIntExtra.setObjectName(_fromUtf8("pgIntExtra"))
         self.gridLayout_8 = QtGui.QGridLayout(self.pgIntExtra)
         self.gridLayout_8.setMargin(0)
@@ -952,7 +958,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_8.addLayout(self.gridLayout_7, 0, 0, 1, 1)
         self.tbxInterview.addItem(self.pgIntExtra, _fromUtf8(""))
         self.pgIntParticipants = QtGui.QWidget()
-        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 362, 258))
+        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 362, 266))
         self.pgIntParticipants.setObjectName(_fromUtf8("pgIntParticipants"))
         self.gridLayout_4 = QtGui.QGridLayout(self.pgIntParticipants)
         self.gridLayout_4.setMargin(0)
@@ -1031,7 +1037,10 @@ class Ui_mapbioManager(object):
         self.teAbout.setObjectName(_fromUtf8("teAbout"))
         self.gridLayout.addWidget(self.teAbout, 0, 0, 1, 1)
         self.twMapBioSettings.addTab(self.tbAbout, _fromUtf8(""))
-        self.gridLayout2.addWidget(self.twMapBioSettings, 0, 0, 1, 1)
+        self.gridLayout_14.addWidget(self.twMapBioSettings, 0, 0, 1, 1)
+        self.pbDialogClose = QtGui.QPushButton(mapbioManager)
+        self.pbDialogClose.setObjectName(_fromUtf8("pbDialogClose"))
+        self.gridLayout_14.addWidget(self.pbDialogClose, 1, 0, 1, 1)
 
         self.retranslateUi(mapbioManager)
         self.twMapBioSettings.setCurrentIndex(0)
@@ -1139,7 +1148,6 @@ class Ui_mapbioManager(object):
 
     def retranslateUi(self, mapbioManager):
         mapbioManager.setWindowTitle(_translate("mapbioManager", "Dialog", None))
-        self.pbDialogClose.setText(_translate("mapbioManager", "Close", None))
         self.tbSelectProjectDir.setToolTip(_translate("mapbioManager", "<html><head/><body><p>Click here to set the LOUIS Map Biographer default projects directory.</p></body></html>", None))
         self.tbSelectProjectDir.setText(_translate("mapbioManager", "...", None))
         self.lblCurrentProject.setText(_translate("mapbioManager", "Select or Create Project", None))
@@ -1149,6 +1157,8 @@ class Ui_mapbioManager(object):
         self.pbSaveSettings.setText(_translate("mapbioManager", "Save Settings", None))
         self.pbCancelSettings.setText(_translate("mapbioManager", "Cancel Settings", None))
         self.pbDeleteProject.setText(_translate("mapbioManager", "Delete Current Project", None))
+        self.pbSystemTest.setToolTip(_translate("mapbioManager", "Test if audio and other libraries are present and available", None))
+        self.pbSystemTest.setText(_translate("mapbioManager", "Check System", None))
         self.lblProjectMapSettings.setText(_translate("mapbioManager", "Project Map Settings", None))
         self.lblQgsProject.setText(_translate("mapbioManager", "QGIS Project", None))
         self.tbSelectQgsProject.setToolTip(_translate("mapbioManager", "<html><head/><body><p>Click here to select the QGIS project to use with LOUIS Map Biographer</p></body></html>", None))
@@ -1212,6 +1222,7 @@ class Ui_mapbioManager(object):
         self.lblTimeOfYear.setText(_translate("mapbioManager", "Project Times of Year Definitions", None))
         self.pteTimeOfYear.setToolTip(_translate("mapbioManager", "<html><head/><body><p>Enter time of year options (one per line) using as a list of months and a name as per the following example:</p><p>12,1,2 = Winter<br/>3,4,5 = Spring<br/>6,7,8 = Summer<br/>9,10,11 = Autumn</p></body></html>", None))
         self.lblContentCodes.setText(_translate("mapbioManager", "Project Content Code Definitions", None))
+        self.tbSortCodes.setText(_translate("mapbioManager", "Sort Codes", None))
         self.pteContentCodes.setToolTip(_translate("mapbioManager", "<html><head/><body><p>Enter a list of codes (one per line) in the following format:</p><p>BP = Berry Picking<br/>CB = Cabin</p><p><br/></p></body></html>", None))
         self.lblDefaultCodes.setText(_translate("mapbioManager", "Project Default Feature Codes", None))
         self.lblDefaultCode.setText(_translate("mapbioManager", "Non-Spatial", None))
@@ -1280,6 +1291,7 @@ class Ui_mapbioManager(object):
         self.tbxParticipants.setItemText(self.tbxParticipants.indexOf(self.pgTelecoms), _translate("mapbioManager", "Phones / Faxes", None))
         self.twMapBioSettings.setTabText(self.twMapBioSettings.indexOf(self.tbPeople), _translate("mapbioManager", "Participants", None))
         self.lblInterviews.setText(_translate("mapbioManager", "Interview List", None))
+        self.tblInterviews.setSortingEnabled(False)
         self.pbIntNew.setText(_translate("mapbioManager", "New", None))
         self.pbIntSave.setText(_translate("mapbioManager", "Save", None))
         self.pbIntCancel.setText(_translate("mapbioManager", "Cancel", None))
@@ -1328,7 +1340,7 @@ class Ui_mapbioManager(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.0.6</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.1</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-weight:600;\"><br /></p>\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">To submit comments about this version please visit <a href=\"louistoolkit.ca/tools/mapbiographer\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/tools/mapbiographer</span></a> or our contact page at <a href=\"louistoolkit.ca/contact\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/contact</span></a>.</p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"
@@ -1340,4 +1352,5 @@ class Ui_mapbioManager(object):
 "<hr />\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">1 - Tobias, Terry N., 2009. <a href=\"http://ecotrust.ca/first-nations/new-book-use-and-occupancy-map-surveys-now-available\"><span style=\" text-decoration: underline; color:#0000ff;\">Living Proof: The essential data-collection guide for Indigenous Use-and-Occupancy map surveys</span></a>.  Ecostrust Canada and Union of BC Indian Chiefs, British Columbia, Canada.</p></body></html>", None))
         self.twMapBioSettings.setTabText(self.twMapBioSettings.indexOf(self.tbAbout), _translate("mapbioManager", "About", None))
+        self.pbDialogClose.setText(_translate("mapbioManager", "Close", None))
 
