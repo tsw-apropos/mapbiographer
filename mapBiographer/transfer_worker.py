@@ -26,6 +26,7 @@ from PyQt4 import QtCore, QtGui
 import traceback, time, os, sys, inspect, datetime, subprocess
 import csv, json, zipfile, shutil, glob, urllib, urllib2
 import httplib, mimetypes, mimetools, io, itertools, codecs, base64
+from copy import deepcopy
 
 #
 # transferContent - a worker to transfer content to and from LMB
@@ -160,7 +161,8 @@ class transferContent(QtCore.QObject):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         fRoot,fExt = os.path.splitext(fName)
-        if fExt <> '.zip':
+        if fExt.lower() <> '.zip':
+            #QgsMessageLog.logMessage(fName)
             os.remove(fName)
     
     #
@@ -171,7 +173,7 @@ class transferContent(QtCore.QObject):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
-        fzip = zipfile.ZipFile(fName, 'w', zipfile.ZIP_DEFLATED)
+        fzip = zipfile.ZipFile(fName, 'w', zipfile.ZIP_DEFLATED, True)
         abs_src = os.path.abspath(srcPath)
         for dirname, subdirs, files in os.walk(srcPath):
             for filename in files:
@@ -198,8 +200,6 @@ class transferContent(QtCore.QObject):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
-            #QgsMessageLog.logMessage(srcFile)
-            #QgsMessageLog.logMessage(destFile)
         #
         s = QtCore.QSettings()
         rv = s.value('mapBiographer/oggencFile')
@@ -232,7 +232,8 @@ class transferContent(QtCore.QObject):
         self.workerStatus.emit('Gathering Project Information')
         #
         # get project information
-        #
+        projFileName = os.path.join(self.dirName,'lmb-project-info.json')
+        projDateTime = datetime.datetime.fromtimestamp(os.path.getmtime(projFileName))
         # process content codes
         codes = {}
         for rec in self.projDict['projects'][str(self.projId)]['default_codes']:
@@ -276,183 +277,194 @@ class transferContent(QtCore.QObject):
             if int(buildPercent) > lastPercent and buildPercent <= 99.0:
                 self.progressStep.emit(buildPercent)
                 lastPercent = buildPercent           
-            # create document folder
-            # create document directory
-            docDict = self.projDict['projects'][str(self.projId)]["documents"][intv]
-            docDir = os.path.join(exDir,'p%d-i%d' % (self.projId,docDict['id']))
-            if not os.path.exists(docDir):
-                os.makedirs(docDir,0755)
-            # create images directory
-            imageDir = os.path.join(docDir,'images')
-            if not os.path.exists(imageDir):
-                os.makedirs(imageDir,0755)
-            # create document dictionary
-            docInfo = {
-                "id": docDict['id'],
-                "code": docDict["code"],
-                "title": docDict["title"],
-                "subject": docDict["subject"],
-                "description": docDict["description"],
-                "start_datetime": docDict["start_datetime"],
-                "end_datetime": docDict["end_datetime"],
-                "location": docDict["location"],
-                "tags": ",".join(docDict["tags"]),
-                "note": docDict["note"],
-                "default_data_security": docDict["default_data_security"],
-                "language": docDict["language"],
-                "publisher": docDict["publisher"],
-                "source": docDict["source"],
-                "citation": docDict["citation"],
-                "rights_holder": docDict["rights_holder"],
-                "rights_statement": docDict["rights_statement"],
-                "creator": docDict["creator"],
-                "multimedia_source_file": None,
-                "additional_files":[],
-                "date_modified": datetime.datetime.now().isoformat(),
-                "sections":{},
-                "participants": docDict['participants']
-            }
-            # add participants to list
-            for key, value in docDict['participants'].iteritems():
-                participantIdList.append(value["participant_id"])
-            # convert audio if available
-            self.workerStatus.emit('Exporting Audio')
-            intvMediaFName = "lmb-p%d-i%d-media" % (self.projId,docDict["id"])
-            srcName = os.path.join(self.dirName,'media',intvMediaFName+'.wav')
-            outName = os.path.join(docDir,intvMediaFName+'.ogg')
-            if os.path.exists(srcName):
-                retval = self.oggCreate(srcName,outName)
-                if retval == -1:
-                    messageText = 'Unable to convert audio files. '
-                    messageText += "Confirm that oggenc is installed and its location set defined "
-                    messageText += "the Map Biographer Manager."
-                    self.workerPopup.emit(messageText,'Warning')
-                else:
-                    docInfo["multimedia_source_file"] = intvMediaFName+'.ogg'
-            #self.progressStep.emit(50)
-            # interview sections and their geometry
-            self.workerStatus.emit('Exporting Sections')
+            # test if export needed
+            docDict = deepcopy(self.projDict['projects'][str(self.projId)]["documents"][intv])
+            zipFName = "lmb-p%d-i%d-archive.zip" % (int(self.projId),int(docDict['id']))
+            intZFileName = os.path.join(exDir,zipFName)
+            arcExists = False
+            if os.path.exists(intZFileName):
+                arcExists = True
+                izfDateTime = datetime.datetime.fromtimestamp(os.path.getmtime(intZFileName))
+            else:
+                izfDateTime = projDateTime - datetime.timedelta(days=1)
             intvFName = "lmb-p%d-i%d-data.json" % (self.projId,docDict["id"])
             nf = os.path.join(self.dirName,"interviews",intvFName)
             if os.path.exists(nf):
+                intvDateTime = datetime.datetime.fromtimestamp(os.path.getmtime(nf))
                 f = open(nf,'r')
                 intvDict = json.loads(f.read())
                 f.close()
             else:
+                intvDateTime = projDateTime - datetime.timedelta(days=1)
                 intvDict = {}
-            counter = 0
-            secCount = len(intvDict)
-            for key, value in intvDict.iteritems():
-                counter += 1
-                #buildPercent = (counter / float(secCount) * 100 * 0.5) + 50
-                #if int(buildPercent) > lastPercent and buildPercent <= 99.0:
-                #    self.progressStep.emit(buildPercent)
-                #    lastPercent = buildPercent
-                # process dates and times
-                if value['use_period'] in ['R','U','N']:
-                    dtV = value['use_period']
-                    dtS = ''
-                    dtE = ''
-                else:
-                    dtV = 'P'
-                    dtS, dtE = value['use_period'].split(':')
-                    dtS = dtS.strip()
-                    dtE = dtE.strip()
-                # process times of year
-                if value['time_of_year'] in ['R','U','N','SP']:
-                    toyV = value['time_of_year']
-                    toyM = ''
-                else:
-                    toyV = 'P'
-                    toyM = [int(x) for x in value['time_of_year'].split(',')]
-                    #toyM = value['time_of_year']
-                # process geom and geom source
-                if value['geom_source'] in ('pt','ln','pl'):
-                    #QgsMessageLog.logMessage(key)
-                    geom = QgsGeometry.fromWkt(value["the_geom"])
-                    if value['geom_source'] == 'pt':
-                        if geom.isMultipart() == True:
-                            simpleGeom = QgsGeometry.fromPoint(geom.asMultiPoint()[0])
-                        else:
-                            simpleGeom = geom
-                    elif value['geom_source'] == 'ln':
-                        if geom.isMultipart() == True:
-                            simpleGeom = QgsGeometry.fromPolyline(geom.asMultiPolyline()[0])
-                        else:
-                            simpleGeom = geom
-                    else:
-                        if geom.isMultipart() == True:
-                            simpleGeom = QgsGeometry.fromPolygon(geom.asMultiPolygon()[0])
-                        else:
-                            simpleGeom = geom
-                    geomText = json.loads(simpleGeom.exportToGeoJSON())
-                    geomSource = ""
-                else:
-                    geomText = None
-                    if value["geom_source"] <> 'ns':
-                        geomSource = value["geom_source"]
-                    else:
-                        geomSource = ""
-                # modify media files to include path
-                mediaFiles = []
-                for rec in value['media_files']:
-                    mediaFiles.append(['images/'+rec[0],rec[1]])
-                # process scale
-                if value['spatial_data_scale'] == "":
-                    spatialScale = None
-                else:
-                    spatialScale = value['spatial_data_scale']
-                # create section dictionary
-                sectionDict = {
-                    "primary_code": value['code_type'],
-                    "code_integer": value['code_integer'],
-                    "data_security": value['data_security'],
-                    "legacy_code": value['legacy_code'],
-                    "section_text": value['section_text'],
-                    "note": value['note'],
-                    "media_files": mediaFiles,
-                    "recording_datetime": value['recording_datetime'],
-                    "use_period": dtV,
-                    "use_period_start": dtS,
-                    "use_period_end": dtE,
-                    "time_of_year": toyV,
-                    "time_of_year_array": toyM,
-                    "spatial_data_source": value['spatial_data_source'],
-                    "spatial_data_scale": spatialScale,
-                    "tags": ','.join(value['tags']),
-                    "content_codes": value['content_codes'],
-                    "media_start_time": value['media_start_time'],
-                    "media_end_time": value['media_end_time'],
-                    "the_geom": geomText,
-                    "the_geom_source": geomSource
+            if (arcExists and (intvDateTime > izfDateTime or projDateTime > izfDateTime)) or arcExists == False:    
+                # create document folder
+                # create document directory
+                docDir = os.path.join(exDir,'p%d-i%d' % (int(self.projId),int(docDict['id'])))
+                if not os.path.exists(docDir):
+                    os.makedirs(docDir,0755)
+                # create images directory
+                imageDir = os.path.join(docDir,'images')
+                if not os.path.exists(imageDir):
+                    os.makedirs(imageDir,0755)
+                # create document dictionary
+                docInfo = {
+                    "id": docDict['id'],
+                    "code": docDict["code"],
+                    "title": docDict["title"],
+                    "subject": docDict["subject"],
+                    "description": docDict["description"],
+                    "start_datetime": docDict["start_datetime"],
+                    "end_datetime": docDict["end_datetime"],
+                    "location": docDict["location"],
+                    "tags": ",".join(docDict["tags"]),
+                    "note": docDict["note"],
+                    "default_data_security": docDict["default_data_security"],
+                    "language": docDict["language"],
+                    "publisher": docDict["publisher"],
+                    "source": docDict["source"],
+                    "citation": docDict["citation"],
+                    "rights_holder": docDict["rights_holder"],
+                    "rights_statement": docDict["rights_statement"],
+                    "creator": docDict["creator"],
+                    "multimedia_source_file": None,
+                    "additional_files":[],
+                    "date_modified": datetime.datetime.now().isoformat(),
+                    "sections":{},
+                    "participants": docDict['participants']
                 }
-                # copy media files
-                for rec in value['media_files']:
-                    srcName = os.path.join(self.dirName,'images',rec[0])
-                    destName = os.path.join(imageDir,rec[0])
-                    shutil.copy(srcName,destName)
-                # add section to docInfo
-                docInfo["sections"][key] = sectionDict
-            # interview participants related to exported interviews
-            self.workerStatus.emit('Exporting Participants')
-            partInfo = {}
-            for partId in participantIdList:
-                partInfo[partId] = self.projDict['participants'][str(partId)]
-                partInfo[partId]['tags'] = ','.join(partInfo[partId]['tags'])
-            # commit dictionary to disk
-            docFile = os.path.join(docDir,'import.json')
-            fDict = {
-                "project_details": projInfo,
-                "document_details": docInfo,
-                "participant_details": partInfo
-            }
-            f = open(docFile,'w')
-            f.write(json.dumps(fDict,indent=4))
-            f.close()
-            # compress outputs into zip file
-            zipFName = "lmb-p%d-i%d-archive.zip" % (self.projId,docDict['id'])
-            intZFileName = os.path.join(exDir,zipFName)
-            self.zipArchiveMake(docDir, intZFileName, excludeFileType='.zip')
+                # add participants to list
+                for key, value in docDict['participants'].iteritems():
+                    participantIdList.append(value["participant_id"])
+                # convert audio if available
+                self.workerStatus.emit('Exporting Audio')
+                intvMediaFName = "lmb-p%d-i%d-media" % (self.projId,docDict["id"])
+                srcName = os.path.join(self.dirName,'media',intvMediaFName+'.wav')
+                outName = os.path.join(docDir,intvMediaFName+'.ogg')
+                if os.path.exists(srcName):
+                    retval = self.oggCreate(srcName,outName)
+                    if retval == -1:
+                        messageText = 'Unable to convert audio files. '
+                        messageText += "Confirm that oggenc is installed and its location set defined "
+                        messageText += "the Map Biographer Manager."
+                        self.workerPopup.emit(messageText,'Warning')
+                    else:
+                        docInfo["multimedia_source_file"] = intvMediaFName+'.ogg'
+                #self.progressStep.emit(50)
+                # interview sections and their geometry
+                self.workerStatus.emit('Exporting Sections')
+                counter = 0
+                secCount = len(intvDict)
+                for key, value in intvDict.iteritems():
+                    counter += 1
+                    #buildPercent = (counter / float(secCount) * 100 * 0.5) + 50
+                    #if int(buildPercent) > lastPercent and buildPercent <= 99.0:
+                    #    self.progressStep.emit(buildPercent)
+                    #    lastPercent = buildPercent
+                    # process dates and times
+                    if value['use_period'] in ['R','U','N']:
+                        dtV = value['use_period']
+                        dtS = ''
+                        dtE = ''
+                    else:
+                        dtV = 'P'
+                        dtS, dtE = value['use_period'].split(':')
+                        dtS = dtS.strip()
+                        dtE = dtE.strip()
+                    # process times of year
+                    if value['time_of_year'] in ['R','U','N','SP']:
+                        toyV = value['time_of_year']
+                        toyM = ''
+                    else:
+                        toyV = 'P'
+                        toyM = [int(x) for x in value['time_of_year'].split(',')]
+                        #toyM = value['time_of_year']
+                    # process geom and geom source
+                    if value['geom_source'] in ('pt','ln','pl'):
+                        #QgsMessageLog.logMessage(key)
+                        geom = QgsGeometry.fromWkt(value["the_geom"])
+                        if value['geom_source'] == 'pt':
+                            if geom.isMultipart() == True:
+                                simpleGeom = QgsGeometry.fromPoint(geom.asMultiPoint()[0])
+                            else:
+                                simpleGeom = geom
+                        elif value['geom_source'] == 'ln':
+                            if geom.isMultipart() == True:
+                                simpleGeom = QgsGeometry.fromPolyline(geom.asMultiPolyline()[0])
+                            else:
+                                simpleGeom = geom
+                        else:
+                            if geom.isMultipart() == True:
+                                simpleGeom = QgsGeometry.fromPolygon(geom.asMultiPolygon()[0])
+                            else:
+                                simpleGeom = geom
+                        geomText = json.loads(simpleGeom.exportToGeoJSON())
+                        geomSource = ""
+                    else:
+                        geomText = None
+                        if value["geom_source"] <> 'ns':
+                            geomSource = value["geom_source"]
+                        else:
+                            geomSource = ""
+                    # modify media files to include path
+                    mediaFiles = []
+                    for rec in value['media_files']:
+                        mediaFiles.append(['images/'+rec[0],rec[1]])
+                    # process scale
+                    if value['spatial_data_scale'] == "":
+                        spatialScale = None
+                    else:
+                        spatialScale = value['spatial_data_scale']
+                    # create section dictionary
+                    sectionDict = {
+                        "primary_code": value['code_type'],
+                        "code_integer": value['code_integer'],
+                        "data_security": value['data_security'],
+                        "legacy_code": value['legacy_code'],
+                        "section_text": value['section_text'],
+                        "note": value['note'],
+                        "media_files": mediaFiles,
+                        "recording_datetime": value['recording_datetime'],
+                        "use_period": dtV,
+                        "use_period_start": dtS,
+                        "use_period_end": dtE,
+                        "time_of_year": toyV,
+                        "time_of_year_array": toyM,
+                        "spatial_data_source": value['spatial_data_source'],
+                        "spatial_data_scale": spatialScale,
+                        "tags": ','.join(value['tags']),
+                        "content_codes": value['content_codes'],
+                        "media_start_time": value['media_start_time'],
+                        "media_end_time": value['media_end_time'],
+                        "the_geom": geomText,
+                        "the_geom_source": geomSource
+                    }
+                    # copy media files
+                    for rec in value['media_files']:
+                        srcName = os.path.join(self.dirName,'images',rec[0])
+                        destName = os.path.join(imageDir,rec[0])
+                        shutil.copy(srcName,destName)
+                    # add section to docInfo
+                    docInfo["sections"][key] = sectionDict
+                # interview participants related to exported interviews
+                self.workerStatus.emit('Exporting Participants')
+                partInfo = {}
+                for partId in participantIdList:
+                    partInfo[partId] = self.projDict['participants'][str(partId)]
+                    partInfo[partId]['tags'] = ','.join(partInfo[partId]['tags'])
+                # commit dictionary to disk
+                docFile = os.path.join(docDir,'import.json')
+                fDict = {
+                    "project_details": projInfo,
+                    "document_details": docInfo,
+                    "participant_details": partInfo
+                }
+                f = open(docFile,'w')
+                f.write(json.dumps(fDict,indent=4))
+                f.close()
+                # compress outputs into zip file
+                self.workerStatus.emit('Compressing Archive')
+                self.zipArchiveMake(docDir, intZFileName, excludeFileType='.zip')
         # remove original files
         dirList = glob.glob(exDir+'/*')
         self.removeFilesInList(dirList)
@@ -520,6 +532,7 @@ class transferContent(QtCore.QObject):
             pointFeatures = []
             lineFeatures = []
             polygonFeatures = []
+            self.workerStatus.emit('Exporting Attributes')
             for iKey, iValue in intvDict.iteritems():
                 # skip non-spatial sections
                 if iValue['geom_source'] in ('pt','ln','pl') or iValue['geom_source'] <> 'ns':
@@ -588,6 +601,7 @@ class transferContent(QtCore.QObject):
                         lineFeatures.append(entry)
                     elif geomSrce == 'pl':
                         polygonFeatures.append(entry)
+            self.workerStatus.emit('Exporting GIS Features')
             # write point file
             if len(pointFeatures) > 0:
                 exportDict = {"type":"FeatureCollection",
@@ -630,10 +644,12 @@ class transferContent(QtCore.QObject):
                     messageText += "the Map Biographer Manager."
                     self.workerPopup.emit(messageText,'Warning')
         # compress outputs into zip file
+        self.workerStatus.emit('Compressing Archive')
         zipFName = 'lmb-p%d-gis.zip' % self.projId
         intZFileName = os.path.join(exDir,zipFName)
         self.zipArchiveMake(exDir, intZFileName,'.zip')
         # remove original files
+        self.workerStatus.emit('Deleting Temporary Files')
         dirList = glob.glob(exDir+'/*')
         self.removeFilesInList(dirList)
         

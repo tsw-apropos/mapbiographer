@@ -48,7 +48,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.frProgress.setVisible(False)
 
         # debug setup
-        self.debug = True
+        self.debug = False
         if self.debug:
             self.myself = lambda: inspect.stack()[1][3]
         if self.debug:
@@ -211,7 +211,6 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
 
         if self.debug == True:
             QgsMessageLog.logMessage(self.myself())
-        #QgsMessageLog.logMessage(messageText)
         # clean up the worker and thread
         self.worker.deleteLater()
         self.thread.quit()
@@ -232,6 +231,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.pbStepProgress.setValue(0)
         # reset interface
         self.interfaceEnable()
+        self.close()
 
     #
     # transfer error
