@@ -26,6 +26,7 @@
 from PyQt4 import QtCore, QtGui
 from qgis.core import *
 from qgis.gui import *
+import qgis.utils
 import time 
 
 class lmbMapToolPolygon(QgsMapTool):
@@ -107,9 +108,7 @@ class lmbMapToolPolygon(QgsMapTool):
             if layer <> None:
                 x = event.pos().x()
                 y = event.pos().y()
-                selPoint = QtCore.QPoint(x,y)
-                # create point
-                point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+                point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
                 # put rubber band at cursor
                 self.rb.movePoint(point)
                 # set new point
@@ -145,8 +144,11 @@ class lmbMapToolPolygon(QgsMapTool):
     
         coords_tmp = coords[:]
         coords = []
+        crsSrc = QgsCoordinateReferenceSystem(qgis.utils.iface.mapCanvas().mapSettings().destinationCrs())
+        crsDest = QgsCoordinateReferenceSystem(layer.crs())
+        xform = QgsCoordinateTransform(crsSrc,crsDest)
         for point in coords_tmp:
-            transformedPoint = self.canvas.mapRenderer().mapToLayerCoordinates( layer, point );
+            transformedPoint = xform.transform(point)
             coords.append(transformedPoint)
        
         coords_tmp = coords[:]

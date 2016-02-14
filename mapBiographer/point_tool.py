@@ -26,6 +26,7 @@
 from PyQt4 import QtCore, QtGui
 from qgis.core import *
 from qgis.gui import *
+import qgis.utils
 import time 
 
 class lmbMapToolPoint(QgsMapTool):
@@ -98,7 +99,7 @@ class lmbMapToolPoint(QgsMapTool):
             if layer <> None:
                 x = event.pos().x()
                 y = event.pos().y()
-                point = QgsMapToPixel.toMapCoordinates(self.canvas.getCoordinateTransform(), x, y)
+                point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
                 # add point
                 if self.rb.size() > 0:
                     self.rb.removeLastPoint()
@@ -113,8 +114,11 @@ class lmbMapToolPoint(QgsMapTool):
     def sendGeometry(self, point):
 
         layer = self.canvas.currentLayer() 
-        transformedPoint = self.canvas.mapRenderer().mapToLayerCoordinates( layer, point )
-
+        crsSrc = QgsCoordinateReferenceSystem(qgis.utils.iface.mapCanvas().mapSettings().destinationCrs())
+        crsDest = QgsCoordinateReferenceSystem(layer.crs())
+        xform = QgsCoordinateTransform(crsSrc,crsDest)
+        transformedPoint = xform.transform(point)
+        
         g = QgsGeometry().fromPoint(transformedPoint)
         if g <> None and g.isGeosValid():
             self.started = False

@@ -76,7 +76,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # debug setup
         self.debug = False
         self.reportTiming = False
-        self.debugDepth = 4
+        self.debugDepth = 2
         self.initTime = datetime.datetime.now()
         if self.debug and self.debugDepth >= 1:
             self.myself = lambda: inspect.stack()[1][3]
@@ -1249,11 +1249,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # load layers
         # polygon layer
         self.polygons_layer = QgsVectorLayer('MultiPolygon?crs=epsg:4326&field=section_code:string(20)&index=yes',"lmb_polygons","memory")
-        self.polygons_layer.rendererV2().symbol().setAlpha(0.5)
-        symbolLayer = self.polygons_layer.rendererV2().symbol().symbolLayer(0)
-        symbolLayer.setFillColor(QtGui.QColor('#ff7800'))
-        symbolLayer.setBorderColor(QtGui.QColor('#717272'))
-        symbolLayer.setBorderWidth(0.6)
+        symbol = QgsFillSymbolV2.createSimple({'color':'#ff7800','outline_color':'#717272','outline_width':'0.6'})
+        symbol.setAlpha(0.5)
+        self.polygons_layer.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(self.polygons_layer)
         palyrPolygons = QgsPalLayerSettings()
         palyrPolygons.readFromLayer(self.polygons_layer)
@@ -1263,9 +1261,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         palyrPolygons.writeToLayer(self.polygons_layer)
         # lines layer
         self.lines_layer = QgsVectorLayer('MultiLineString?crs=epsg:4326&field=section_code:string(20)&index=yes',"lmb_lines","memory")
-        symbol = self.lines_layer.rendererV2().symbol()
-        symbol.setColor(QtGui.QColor('#ff7800'))
-        symbol.setWidth(0.6)
+        symbol = QgsLineSymbolV2.createSimple({'color':'#ff7800','line_width':'0.6'})
+        symbol.setAlpha(0.75)
+        self.lines_layer.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(self.lines_layer)
         palyrLines = QgsPalLayerSettings()
         palyrLines.readFromLayer(self.lines_layer)
@@ -1277,10 +1275,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         palyrLines.writeToLayer(self.lines_layer)
         # points layer
         self.points_layer = QgsVectorLayer('MultiPoint?crs=epsg:4326&field=section_code:string(20)&index=yes',"lmb_points","memory")
-        symbol = self.points_layer.rendererV2().symbols()[0]
-        symbol.setSize(3)
-        symbol.setColor(QtGui.QColor('#ff7800'))
+        symbol = QgsMarkerSymbolV2.createSimple({'name':'circle','color':'#ff7800','size':'2.2'})
         symbol.setAlpha(0.5)
+        self.points_layer.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(self.points_layer)
         palyrPoints = QgsPalLayerSettings()
         palyrPoints.readFromLayer(self.points_layer)
@@ -1460,6 +1457,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.rapidCapture = False
         self.zoomToFeature = False
         self.mapToolsDisableDrawing()
+        if self.sketchMode:
+            self.mapSetSketchMode()
         self.interviewState = 'Finished'
         # reset map tool
         self.canvas.unsetMapTool(self.canvas.mapTool())
@@ -2082,9 +2081,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         currentGeomSource = self.sectionData["geom_source"]
         # use debug track order of calls
         if self.debug:
-            if self.debugDepth < 3:
-                QgsMessageLog.logMessage(self.myself())
-            else:
+            QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(newSectionCode)
+            if self.debugDepth > 3:
                 QgsMessageLog.logMessage('%s (geometry: %s)' % (self.myself(),self.sectionGeometryState))
         # adjust record if section code has changed
         if newSectionCode <>  self.currentSectionCode:
@@ -3473,10 +3472,21 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.iface.zoomToActiveLayer()
 
     #
-    # set Mode - prevent or enable zooming and panning
+    # set sketch mode
     #
     def mapSetSketchMode(self):
 
+        modifiers = QtGui.QApplication.keyboardModifiers()
+        if self.lmbMode == 'Interview':
+            if modifiers == QtCore.Qt.ControlModifier or self.rapidCapture == True:
+                self.copyPrevious = True
+            else:
+                self.copyPrevious = False
+        if self.debug and self.debugDepth >= 2:
+            QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - copyPrevious: %s' % str(self.copyPrevious))
+            QgsMessageLog.logMessage(' - previousPrimaryCode: %s' % self.previousPrimaryCode)
+            QgsMessageLog.logMessage(' - currentFeature: %s' % str(self.currentFeature))
         #if self.traceMode:
         #    self.canvas.viewport().removeEventFilter(self.hook)
         #    self.traceMode = False
@@ -3674,10 +3684,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             pass
         uri = "MultiPoint?crs=epsg:4326"
         self.editLayer = QgsVectorLayer(uri, 'New Point', 'memory')
-        symbol = self.editLayer.rendererV2().symbols()[0]
-        symbol.setSize(3)
-        symbol.setColor(QtGui.QColor('#ff0000'))
+        symbol = QgsMarkerSymbolV2.createSimple({'name':'circle','color':'#ff8000','size':'2.2'})
         symbol.setAlpha(0.5)
+        self.editLayer.rendererV2().setSymbol(symbol)
         dataProvider = self.editLayer.dataProvider()
         QgsMapLayerRegistry.instance().addMapLayer(self.editLayer)
         self.iface.legendInterface().setCurrentLayer(self.editLayer)
@@ -3701,7 +3710,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #
     def mapToolsActivateLineCapture(self, isSketch=False):
 
-        if self.lmbMode == 'Interview':
+        if self.lmbMode == 'Interview' and isSketch == False:
             # check for keyboard modifier
             modifiers = QtGui.QApplication.keyboardModifiers()
             if modifiers == QtCore.Qt.ControlModifier or self.rapidCapture == True:
@@ -3729,9 +3738,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.sectionCreateRecord()
             uri = "MultiLineString?crs=epsg:4326"
             self.editLayer = QgsVectorLayer(uri, 'New Line', 'memory')
-            symbol = self.editLayer.rendererV2().symbol()
-            symbol.setColor(QtGui.QColor('#ff7800'))
-            symbol.setWidth(0.6)
+            symbol = QgsLineSymbolV2.createSimple({'color':'#ff7800','line_width':'0.6'})
+            symbol.setAlpha(0.75)
+            self.editLayer.rendererV2().setSymbol(symbol)
             dataProvider = self.editLayer.dataProvider()
             QgsMapLayerRegistry.instance().addMapLayer(self.editLayer)
             self.iface.legendInterface().setCurrentLayer(self.editLayer)
@@ -3755,7 +3764,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #
     def mapToolsActivatePolygonCapture(self, isSketch=False):
 
-        if self.lmbMode == 'Interview':
+        if self.lmbMode == 'Interview' and isSketch == False:
             # check for keyboard modifier
             modifiers = QtGui.QApplication.keyboardModifiers()
             if modifiers == QtCore.Qt.ControlModifier or self.rapidCapture == True:
@@ -3783,11 +3792,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.sectionCreateRecord()
             uri = "MultiPolygon?crs=epsg:4326"
             self.editLayer = QgsVectorLayer(uri, 'New Polygon', 'memory')
-            self.editLayer.rendererV2().symbol().setAlpha(0.5)
-            symbolLayer = self.polygons_layer.rendererV2().symbol().symbolLayer(0)
-            symbolLayer.setFillColor(QtGui.QColor('#ff7800'))
-            symbolLayer.setBorderColor(QtGui.QColor('#717272'))
-            symbolLayer.setBorderWidth(0.6)
+            symbol = QgsFillSymbolV2.createSimple({'color':'#ff7800','outline_color':'#717272','outline_width':'0.6'})
+            symbol.setAlpha(0.5)
+            self.editLayer.rendererV2().setSymbol(symbol)
             dataProvider = self.editLayer.dataProvider()
             QgsMapLayerRegistry.instance().addMapLayer(self.editLayer)
             self.iface.legendInterface().setCurrentLayer(self.editLayer)
@@ -3846,28 +3853,25 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.editLayer = QgsVectorLayer(uri, 'Edit Point', 'memory')
                 feat = self.points_layer.selectedFeatures()[0]
                 # set display parameters
-                symbol = self.editLayer.rendererV2().symbols()[0]
-                symbol.setSize(3)
-                symbol.setColor(QtGui.QColor('#ff0000'))
+                symbol = QgsMarkerSymbolV2.createSimple({'name':'circle','color':'#ff0000','size':'2.2'})
                 symbol.setAlpha(0.5)
+                self.editLayer.rendererV2().setSymbol(symbol)
             elif self.currentFeature == 'ln':
                 uri = "MultiLineString?crs=epsg:4326"
                 self.editLayer = QgsVectorLayer(uri, 'Edit Line', 'memory')
                 feat = self.lines_layer.selectedFeatures()[0]
                 # set display parameters
-                symbol = self.editLayer.rendererV2().symbol()
-                symbol.setColor(QtGui.QColor('#ff0000'))
-                symbol.setWidth(1)
+                symbol = QgsLineSymbolV2.createSimple({'color':'#ff0000','line_width':'0.6'})
+                symbol.setAlpha(0.75)
+                self.editLayer.rendererV2().setSymbol(symbol)
             elif self.currentFeature == 'pl':
                 uri = "MultiPolygon?crs=epsg:4326"
                 self.editLayer = QgsVectorLayer(uri, 'Edit Polygon', 'memory')
                 feat = self.polygons_layer.selectedFeatures()[0]
                 # set display parameters
-                self.editLayer.rendererV2().symbol().setAlpha(0.5)
-                symbolLayer = self.editLayer.rendererV2().symbol().symbolLayer(0)
-                symbolLayer.setFillColor(QtGui.QColor('#ff8080'))
-                symbolLayer.setBorderColor(QtGui.QColor('#ff0000'))
-                symbolLayer.setBorderWidth(1)
+                symbol = QgsFillSymbolV2.createSimple({'color':'#ff8080','outline_color':'#ff0000','outline_width':'0.6'})
+                symbol.setAlpha(0.5)
+                self.editLayer.rendererV2().setSymbol(symbol)
             else:
                 QtGui.QMessageBox.warning(self, 'User Error',
                     'The selected section has no spatial data', QtGui.QMessageBox.Ok)
@@ -3876,6 +3880,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             dataProvider = self.editLayer.dataProvider()
             dataProvider.addFeatures([feat])
             # register and select current layer
+            # activate the points layer first as this is top layer
+            # this means that the new edit layer will be added in front of this one
+            self.iface.legendInterface().setCurrentLayer(self.points_layer)
             QgsMapLayerRegistry.instance().addMapLayer(self.editLayer)
             self.iface.legendInterface().setCurrentLayer(self.editLayer)
             # make memory layer editable
@@ -3932,28 +3939,25 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.editLayer = QgsVectorLayer(uri, 'Edit Point', 'memory')
                 feat = self.points_layer.selectedFeatures()[0]
                 # set display parameters
-                symbol = self.editLayer.rendererV2().symbols()[0]
-                symbol.setSize(3)
-                symbol.setColor(QtGui.QColor('#ff0000'))
+                symbol = QgsMarkerSymbolV2.createSimple({'name':'circle','color':'#ff0000','size':'2.2'})
                 symbol.setAlpha(0.5)
+                self.editLayer.rendererV2().setSymbol(symbol)
             elif self.currentFeature == 'ln':
                 uri = "MultiLineString?crs=epsg:4326"
                 self.editLayer = QgsVectorLayer(uri, 'Edit Line', 'memory')
                 feat = self.lines_layer.selectedFeatures()[0]
                 # set display parameters
-                symbol = self.editLayer.rendererV2().symbol()
-                symbol.setColor(QtGui.QColor('#ff0000'))
-                symbol.setWidth(1)
+                symbol = QgsLineSymbolV2.createSimple({'color':'#ff0000','line_width':'0.6'})
+                symbol.setAlpha(0.75)
+                self.editLayer.rendererV2().setSymbol(symbol)
             elif self.currentFeature == 'pl':
                 uri = "MultiPolygon?crs=epsg:4326"
                 self.editLayer = QgsVectorLayer(uri, 'Edit Polygon', 'memory')
                 feat = self.polygons_layer.selectedFeatures()[0]
                 # set display parameters
-                self.editLayer.rendererV2().symbol().setAlpha(0.5)
-                symbolLayer = self.editLayer.rendererV2().symbol().symbolLayer(0)
-                symbolLayer.setFillColor(QtGui.QColor('#ff8080'))
-                symbolLayer.setBorderColor(QtGui.QColor('#ff0000'))
-                symbolLayer.setBorderWidth(1)
+                symbol = QgsFillSymbolV2.createSimple({'color':'#ff8080','outline_color':'#ff0000','outline_width':'0.6'})
+                symbol.setAlpha(0.5)
+                self.editLayer.rendererV2().setSymbol(symbol)
             else:
                 QtGui.QMessageBox.warning(self, 'User Error',
                     'The selected section has no spatial data', QtGui.QMessageBox.Ok)
@@ -3962,6 +3966,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             dataProvider = self.editLayer.dataProvider()
             dataProvider.addFeatures([feat])
             # register and select current layer
+            # activate the points layer first as this is top layer
+            # this means that the new edit layer will be added in front of this one
+            self.iface.legendInterface().setCurrentLayer(self.points_layer)            
             QgsMapLayerRegistry.instance().addMapLayer(self.editLayer)
             self.iface.legendInterface().setCurrentLayer(self.editLayer)
             # make memory layer editable
@@ -4131,6 +4138,10 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #
     def sketchDrawButton(self):
         
+        if self.debug and self.debugDepth >= 2:
+            QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - copyPrevious: %s' % str(self.copyPrevious))
+            QgsMessageLog.logMessage(' - currentFeature: %s' % str(self.currentFeature))
         rl = plugins['redLayer']
         if not self.sketchButton.isChecked():
             self.mapToolsActivatePanTool()
@@ -4141,6 +4152,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.mapToolsDisableEditing()
             if self.lmbMode == 'Interview' and self.featureState <> 'Create':
                 # create section record so that the audio index starts here
+                self.currentFeature = 'ln'
                 self.sectionCreateRecord()
             rl.sketchAction.__call__()
             self.lineButton.setChecked(False)
@@ -4151,6 +4163,10 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #
     def sketchLineButton(self):
 
+        if self.debug and self.debugDepth >= 2:
+            QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - copyPrevious: %s' % str(self.copyPrevious))
+            QgsMessageLog.logMessage(' - currentFeature: %s' % str(self.currentFeature))
         rl = plugins['redLayer']
         if not self.lineButton.isChecked():
             self.mapToolsActivatePanTool()
@@ -4161,6 +4177,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.mapToolsDisableEditing()
             if self.lmbMode == 'Interview' and self.featureState <> 'Create':
                 # create section record so that the audio index starts here
+                self.currentFeature = 'ln'
                 self.sectionCreateRecord()
             rl.penAction.__call__()
             self.sketchButton.setChecked(False)
@@ -4183,8 +4200,11 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     def sketchToLine(self):
         
         # use debug track order of calls
-        if self.debug and self.debugDepth >= 1:
+        if self.debug and self.debugDepth >= 2:
             QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - copyPrevious: %s' % str(self.copyPrevious))
+            QgsMessageLog.logMessage(' - previousPrimaryCode: %s' % self.previousPrimaryCode)
+            QgsMessageLog.logMessage(' - currentFeature: %s' % str(self.currentFeature))
         # confirm we have something to work with
         rl = plugins['redLayer']
         if len(rl.geoSketches) == 0:
@@ -4206,9 +4226,16 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         QgsMapLayerRegistry.instance().removeMapLayer( sketchLayer.id() )
         # clear interface
         self.clearButton.click()
-        self.tbSketchMode.click()
         # insert into section
         self.mapToolsPlaceLine(newGeom)
+        # set to default line code
+        if self.copyPrevious == True:
+            self.leCode.setText(self.previousPrimaryCode)
+        else:
+            self.leCode.setText(self.lineCode)
+        self.sectionSaveEdits()
+        # change out of sketchMode
+        self.tbSketchMode.click()
         
     #
     # convert sketch to area
@@ -4216,8 +4243,11 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     def sketchToPolygon(self):
 
         # use debug track order of calls
-        if self.debug and self.debugDepth >= 1:
+        if self.debug and self.debugDepth >= 2:
             QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - copyPrevious: %s' % str(self.copyPrevious))
+            QgsMessageLog.logMessage(' - previousPrimaryCode: %s' % self.previousPrimaryCode)
+            QgsMessageLog.logMessage(' - currentFeature: %s' % str(self.currentFeature))
         # confirm we have something to work with
         rl = plugins['redLayer']
         if len(rl.geoSketches) == 0:
@@ -4225,6 +4255,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             response = QtGui.QMessageBox.warning(self, 'Warning',
                messageText, QtGui.QMessageBox.Ok)
             return
+        # set to default polygon code
+        #self.currentPrimaryCode = self.polygonCode
         # set system to capture feature
         self.mapToolsActivatePolygonCapture(True)
         # copy to layer
@@ -4252,9 +4284,16 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             os.remove(f)
         # clear interface
         self.clearButton.click()
-        self.tbSketchMode.click()
         # insert into section
         self.mapToolsPlacePolygon(newGeom)
+        # set to default line code
+        if self.copyPrevious == True:
+            self.leCode.setText(self.previousPrimaryCode)
+        else:
+            self.leCode.setText(self.polygonCode)
+        self.sectionSaveEdits()
+        # change out of sketchMode
+        self.tbSketchMode.click()
 
     #
     # convert sketch to layer
