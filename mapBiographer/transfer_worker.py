@@ -439,6 +439,17 @@ class transferContent(QtCore.QObject):
                         "the_geom": geomText,
                         "the_geom_source": geomSource
                     }
+                    #
+                    # NOTE: Temporary artificial adding of special fields
+                    #       Replace with proper custom fields in future
+                    #
+                    # add extra if present
+                    #
+                    if 'hg_potential' in value:
+                        sectionDict['hgpotential'] = value['hg_potential']
+                        sectionDict['proximity'] = value['proximity']
+                        sectionDict['age'] = value['age']
+                        sectionDict['priority'] = value['priority']
                     # copy media files
                     for rec in value['media_files']:
                         srcName = os.path.join(self.dirName,'images',rec[0])

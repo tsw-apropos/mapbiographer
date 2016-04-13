@@ -26,7 +26,7 @@ class Ui_mapbioCollector(object):
     def setupUi(self, mapbioCollector):
         mapbioCollector.setObjectName(_fromUtf8("mapbioCollector"))
         mapbioCollector.setEnabled(True)
-        mapbioCollector.resize(405, 620)
+        mapbioCollector.resize(405, 621)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.MinimumExpanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -194,7 +194,7 @@ class Ui_mapbioCollector(object):
         self.saSectionEdit.setWidgetResizable(True)
         self.saSectionEdit.setObjectName(_fromUtf8("saSectionEdit"))
         self.scrollAreaWidgetContents = QtGui.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 269, 312))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 269, 313))
         self.scrollAreaWidgetContents.setObjectName(_fromUtf8("scrollAreaWidgetContents"))
         self.gridLayout_4 = QtGui.QGridLayout(self.scrollAreaWidgetContents)
         self.gridLayout_4.setMargin(0)

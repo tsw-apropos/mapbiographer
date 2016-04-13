@@ -281,8 +281,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             req = urllib2.Request(url,data)
             response = urllib2.urlopen(req)
             return(response.read())
-        except:
-            return('{"result": "error", "data": "connection error"}')
+        except Exception, e:            
+            return('{"result": "error", "data": "connection error (%s)"}' % str(e))
             
     #
     # connect, retrieve and import information from Heritage

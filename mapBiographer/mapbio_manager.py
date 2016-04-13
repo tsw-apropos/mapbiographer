@@ -568,7 +568,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             if os.path.exists(nf) == False:
                 f = open(nf,'w')
                 self.projDict = {"projects":{},"participants":{}}
-                f.write(json.dumps(self.projDict))
+                f.write(json.dumps(self.projDict,indent=4))
                 f.close()
 
     #

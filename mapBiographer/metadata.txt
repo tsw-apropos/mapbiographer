@@ -13,7 +13,7 @@ qgisMinimumVersion=2.12
 description=Effectively conduct direct to digital map biographies and traditional land use studies. Requires the pyaudio libary and oggenc. Also requires Processing, Red Layer and Multiline Join Plugins. Install the required libraries and plugins before installing Map Biographer.
 about=The goal for LOUIS Map Biographer is to provide the quality and elegance of paper based interviews but deliver real time and cost savings by allowing effective and rapid direct-to-digital data capture by a single interviewer.
     This version is not compatible with releases before 1.0.8
-version=1.1.3
+version=1.1.4
 author=Apropos Information Systems Inc.
 email=info@louistoolkit.ca
 
@@ -22,7 +22,7 @@ email=info@louistoolkit.ca
 # Optional items:
 
 # Uncomment the following line and add your changelog entries:
-changelog=Replacement of navigator panel with tool bar to increase map size. Minor fixes for sketch mode.
+changelog=Fixes to feature and text import and synchronization with LOUIS Heritage.
 
 # tags are comma separated with spaces allowed
 tags=Aboriginal, Indigenous, Traditional Knowledge, Traditional Land Use, Interviews, Use and Occupancy Mapping, Heritage, Local Knowledge

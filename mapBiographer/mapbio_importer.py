@@ -315,7 +315,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             f.write('Use period valid or unused\n')
         else:
             problemsExist = True
-            f.write('Invalid use period values in field %s:\n' % self.cbDatesTimes.currentText())
+            f.write('Invalid use period values in field %s:\n' % self.cbUsePeriod.currentText())
             for code in problemUsePeriod:
                 f.write(code + '\n')
         f.write('\n')

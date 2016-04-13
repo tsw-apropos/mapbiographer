@@ -1228,6 +1228,10 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.interviewAddMapLayers()
         # get keys and add features
         sectionList = []
+        self.points_layer.startEditing()
+        self.lines_layer.startEditing()
+        self.polygons_layer.startEditing()
+        #loadTime = datetime.datetime.now()
         for key,value in self.intvDict.iteritems():
             #QgsMessageLog.logMessage(str(key))
             sectionList.append([value["sequence"],key,value["geom_source"]])
@@ -1237,6 +1241,13 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.sectionMapFeatureLoad(geom,value["geom_source"],value["section_code"])
             if value["code_integer"] > self.maxCodeNumber:
                 self.maxCodeNumber = value["code_integer"]
+        self.points_layer.commitChanges()
+        self.points_layer.updateExtents()
+        self.lines_layer.commitChanges()
+        self.lines_layer.updateExtents()
+        self.polygons_layer.commitChanges()
+        self.polygons_layer.updateExtents()
+        #QgsMessageLog.logMessage('Layers Load %s' % str((datetime.datetime.now()-loadTime).total_seconds()))
         sectionList.sort()
         self.cbFeatureSource.clear()
         self.cbFeatureSource.addItems(['none','unique'])
@@ -2269,7 +2280,21 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 geom = self.sectionData["the_geom"]
                 geom.convertToMultiType()
                 featureType = self.sectionData["geom_source"]
-                self.sectionMapFeatureLoad(geom, featureType, newSectionCode)
+                if featureType == "pt":
+                    self.points_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, newSectionCode)
+                    self.points_layer.commitChanges()
+                    self.points_layer.updateExtents()
+                elif featureType == "ln":
+                    self.lines_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, newSectionCode)
+                    self.lines_layer.commitChanges()
+                    self.lines_layer.updateExtents()
+                elif featureType == "pl":
+                    self.polygons_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, newSectionCode)
+                    self.polygons_layer.commitChanges()
+                    self.polygons_layer.updateExtents()
                 # add to reference list
                 self.cbFeatureSource.addItem('Same as %s' % newSectionCode)
             elif self.sectionGeometryState == "Edited":
@@ -2297,7 +2322,21 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 geom = QgsGeometry.fromWkt(self.sectionData["the_geom"])
                 geom.convertToMultiType()
                 featureType = self.sectionData["geom_source"]
-                self.sectionMapFeatureLoad(geom, featureType, self.currentSectionCode)
+                if featureType == "pt":
+                    self.points_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, self.currentSectionCode)
+                    self.points_layer.commitChanges()
+                    self.points_layer.updateExtents()
+                elif featureType == "ln":
+                    self.lines_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, self.currentSectionCode)
+                    self.lines_layer.commitChanges()
+                    self.lines_layer.updateExtents()
+                elif featureType == "pl":
+                    self.polygons_layer.startEditing()
+                    self.sectionMapFeatureLoad(geom, featureType, self.currentSectionCode)
+                    self.polygons_layer.commitChanges()
+                    self.polygons_layer.updateExtents()
                 # add to reference list
                 self.cbFeatureSource.addItem('Same as %s' % self.currentSectionCode)
             elif self.sectionGeometryState == "Edited":
@@ -2876,17 +2915,14 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         feat.setGeometry(geom)
         feat.setAttributes([sectionCode])
         if featureType == "pt":
-            self.points_layer.startEditing()
-            self.points_layer.addFeature(feat,True)
-            self.points_layer.commitChanges()
+            #self.points_layer.dataProvider().addFeatures([feat])
+            self.points_layer.addFeature(feat)
         elif featureType == "ln":
-            self.lines_layer.startEditing()
-            self.lines_layer.addFeature(feat,True)
-            self.lines_layer.commitChanges()
+            #self.lines_layer.dataProvider().addFeatures([feat])
+            self.lines_layer.addFeature(feat)
         elif featureType == "pl":
-            self.polygons_layer.startEditing()
-            self.polygons_layer.addFeature(feat,True)
-            self.polygons_layer.commitChanges()
+            #self.polygons_layer.dataProvider().addFeatures([feat])
+            self.polygons_layer.addFeature(feat)
     
     #
     # add map feature to section and display it
@@ -2896,7 +2932,21 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # use debug track order of calls
         if self.debug and self.debugDepth >= 2:
             QgsMessageLog.logMessage(self.myself())
-        self.sectionMapFeatureLoad(geom, featureType, sectionCode)
+        if featureType == "pt":
+            self.points_layer.startEditing()
+            self.sectionMapFeatureLoad(geom, featureType, sectionCode)
+            self.points_layer.commitChanges()
+            self.points_layer.updateExtents()
+        elif featureType == "ln":
+            self.lines_layer.startEditing()
+            self.sectionMapFeatureLoad(geom, featureType, sectionCode)
+            self.lines_layer.commitChanges()
+            self.lines_layer.updateExtents()
+        elif featureType == "pl":
+            self.polygons_layer.startEditing()
+            self.sectionMapFeatureLoad(geom, featureType, sectionCode)
+            self.polygons_layer.commitChanges()
+            self.polygons_layer.updateExtents()
         self.sectionData["geom_source"] = featureType
         self.sectionData["the_geom"] = geom.exportToWkt()
         self.sectionData["spatial_data_scale"] = str(int(self.canvas.scale()))
