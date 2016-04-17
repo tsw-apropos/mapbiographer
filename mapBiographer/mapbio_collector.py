@@ -2261,7 +2261,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                     self.sectionMapFeatureUpdateLabel(self.sectionData["geom_source"],self.currentSectionCode,newSectionCode)
                 elif self.cbFeatureSource.currentIndex() > 1:
                     selectedCode = self.cbFeatureSource.currentText()[8:]
-                    if self.self.intvDict[self.currentSectionCode]["geom_source"] <> selectedCode:
+                    if self.intvDict[newSectionCode]["geom_source"] <> selectedCode:
                         geomSource = self.intvDict[selectedCode]["geom_source"]
                         self.sectionSelectMapFeature(geomSource, selectedCode)
                         self.sectionData["geom_source"] = selectedCode
@@ -2567,6 +2567,15 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             idx = self.cbFeatureSource.findText(code, QtCore.Qt.MatchEndsWith)
             if idx > -1:
                 self.cbFeatureSource.removeItem(idx)
+            # select the adjacent row
+            if cRow > 0:
+                cRow = cRow - 1
+            elif self.lwSectionList.count() > 0:
+                cRow = 0
+            else:
+                cRow = -1
+        else:
+            cRow = self.lwSectionList.currentRow()
         # reset interface
         self.sectionDisableSaveCancel()
         # cancel spatial edits if delete clicked during editing
@@ -2583,9 +2592,21 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         if self.lmbMode == 'Import':
             self.sectionSetSortButtons()
         # deselect anything and disable spatial edit buttons
-        self.lwSectionList.setItemSelected(self.lwSectionList.currentItem(),False)
+        if cRow >= 0:
+            self.lwSectionList.setCurrentRow(cRow)
+            item = self.lwSectionList.item(cRow)
+            self.lwSectionList.setItemSelected(item,True)
+            self.lwSectionList.setCurrentItem(item)
+            self.sectionSelect()
+            self.connectSectionControls()
+        else:
+            self.lwSectionList.setItemSelected(self.lwSectionList.currentItem(),False)
+            #self.disconnectSectionControls()
+            #self.lwSectionList.clear()
+            self.cbFeatureSource.clear()
+            self.cbFeatureSource.addItems(['none','unique'])
+            self.pbDeleteSection.setDisabled(True)
         self.mapToolsDisableEditing()
-        self.connectSectionControls()
 
     #
     # create non-spatial section
