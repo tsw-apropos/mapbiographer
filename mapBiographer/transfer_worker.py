@@ -96,7 +96,7 @@ class transferContent(QtCore.QObject):
                     os.makedirs(exDir,0755)
                 self.stepCount = 2
                 self.exportToGIS(exDir)
-            elif self.actionIdx == 4:
+            elif self.actionIdx == 5:
                 # upload completed interviews
                 exDir = os.path.join(self.exProjDir,'heritage')
                 if not os.path.exists(exDir):
@@ -298,6 +298,9 @@ class transferContent(QtCore.QObject):
                 intvDateTime = projDateTime - datetime.timedelta(days=1)
                 intvDict = {}
             if (arcExists and (intvDateTime > izfDateTime or projDateTime > izfDateTime)) or arcExists == False:    
+                # remove zip file if it exists
+                if os.path.exists(intZFileName):
+                    os.path.remove(intZFileName)
                 # create document folder
                 # create document directory
                 docDir = os.path.join(exDir,'p%d-i%d' % (int(self.projId),int(docDict['id'])))

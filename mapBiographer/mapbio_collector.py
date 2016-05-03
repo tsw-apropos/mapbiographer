@@ -26,6 +26,8 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 import os, datetime, time, shutil, json, inspect, re, processing, glob
+import urlparse
+from email.utils import parseaddr
 from copy import deepcopy
 from ui_mapbio_collector import Ui_mapbioCollector
 from mapbio_importer import mapBiographerImporter
@@ -41,26 +43,13 @@ try:
     lmb_audioEnabled = True
 except:
     lmb_audioEnabled = False
-#lmb_audioEnabled = False
-
-#
-# create event hook class to prevent zooming
-# 
-# TSW - 20160120 - trace mode removed and replaced with sketch mode 
-#                  but code retained for reference if needed in future 
-#
-#class EventHook(QtCore.QObject):
-#    def eventFilter(self, object, event):
-#        if event.type() == QtCore.QEvent.Wheel:
-#            return True
-#        else:    
-#            return False
 
 #
 # main class for collector
 #
 class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
 
+    #
     #####################################################
     #                   basic setup                     #
     #####################################################
@@ -101,6 +90,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # clear selected layers
         tv = iface.layerTreeView()
         tv.selectionModel().clear()
+        self.optionalFields = {}
+        self.customFields = {}
         # set default projection if none set
         if self.canvas.mapSettings().hasCrsTransformEnabled() == False:
             self.canvas.mapSettings().setCrsTransformEnabled(True)
@@ -155,8 +146,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.sketchMode = False
         self.connectMapTools()
         # basic interface operation
-        #QtCore.QObject.connect(self.cbMode, QtCore.SIGNAL("currentIndexChanged(int)"), self.setLMBMode)
-        #QtCore.QObject.connect(self.pbClose, QtCore.SIGNAL("clicked()"), self.collectorClose)
         # enable audio if libraries are available
         if lmb_audioEnabled:
             # variables
@@ -240,6 +229,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # open project
         result = self.settingsRead()
         if result == 0:
+            self.customFieldsConfigure()
             result, message = self.collectorOpen()
             if result <> 0:
                 QtGui.QMessageBox.information(self, 'LMB Notice',
@@ -250,9 +240,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.setLMBMode()
         else:
             QtGui.QMessageBox.information(self, 'LMB Notice',
-            'Map Biographer Settings Error. Please correct. Closing.', QtGui.QMessageBox.Ok)
+            'Closing because of settings error. Please correct and try again.', QtGui.QMessageBox.Ok)
             self.collectorClose()
-            
+    
     #
     # create tool bar
     #
@@ -500,32 +490,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             result = QtCore.QObject.disconnect(self.makePolygonButton, QtCore.SIGNAL("clicked()"), self.sketchToLine)
 
     #
-    # connect edit controls from methods
-    #
-    def connectInterviewControls(self):
-
-        # use debug track order of calls
-        if self.debug and self.debugDepth >= 2:
-            QgsMessageLog.logMessage(self.myself())
-            if self.reportTiming:
-                QgsMessageLog.logMessage(str((datetime.datetime.now()-self.initTime).total_seconds()))
-        # connect
-        #QtCore.QObject.connect(self.cbInterviewSelection, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewSelect)
-        
-    #
-    # disconnect edit controls from methods
-    #
-    def disconnectInterviewControls(self):
-        
-        # use debug track order of calls
-        if self.debug and self.debugDepth >= 2:
-            QgsMessageLog.logMessage(self.myself())
-            if self.reportTiming:
-                QgsMessageLog.logMessage(str((datetime.datetime.now()-self.initTime).total_seconds()))
-        # disconnect
-        #result = QtCore.QObject.disconnect(self.cbInterviewSelection, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewSelect)
-        
-    #
     # connect section controls
     #
     def connectSectionControls(self):
@@ -557,6 +521,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         QtCore.QObject.connect(self.pteSectionText, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveCodes)
         QtCore.QObject.connect(self.twSectionContent, QtCore.SIGNAL("currentChanged(int)"), self.sectionCheckTabs)
+        # connection custom fields
+        for rec in self.customWidgets:
+            QtCore.QObject.connect(rec['widget'], QtCore.SIGNAL(rec['signal']), self.sectionEnableSaveCancel)
     
     #
     # disconnect section controls
@@ -590,6 +557,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         result = QtCore.QObject.disconnect(self.pteSectionText, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveCodes)
         result = QtCore.QObject.disconnect(self.twSectionContent, QtCore.SIGNAL("currentChanged(int)"), self.sectionCheckTabs)
+        # connection custom fields
+        for rec in self.customWidgets:
+            QtCore.QObject.disconnect(rec['widget'], QtCore.SIGNAL(rec['signal']), self.sectionEnableSaveCancel)
         
     #
     # read QGIS settings
@@ -615,8 +585,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         else:
             self.projId = int(rv)
         if os.path.exists(os.path.join(self.dirName,'lmb-project-info.json')):
-            self.projectFileRead()
-            return(0)
+            result = self.projectFileRead()
+            return(result)
         else:
             return(-1)
 
@@ -636,23 +606,54 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.projDict = json.loads(f.read())
             f.close()
             mapData = self.projDict["projects"][str(self.projId)]["lmb_map_settings"]
-            self.qgsProject = mapData["qgis_project"]
-            self.baseGroups = mapData["base_groups"]
-            self.baseGroupIdxs = range(len(self.baseGroups))
-            self.boundaryLayerName = mapData["boundary_layer"]
-            if mapData["enable_reference"] == "Yes":
-                self.enableReference = True
-            else: 
-                self.enableReference = False
-            self.referenceLayerName = mapData["reference_layer"]
-            self.minDenom = int(mapData["max_scale"].split(':')[1].replace(',',''))
-            self.maxDenom = int(mapData["min_scale"].split(':')[1].replace(',',''))
-            if mapData["zoom_notices"] == "Yes":
-                self.showZoomNotices = True
+            if 'qgis_project' not in mapData:
+                messageText = 'A QGIS project needs to be defined before conducting, importing or transcribing data'
+                response = QtGui.QMessageBox.warning(self, 'Warning',
+                    messageText, QtGui.QMessageBox.Ok)
+                return(-1)
             else:
-                self.showZoomNotices = False
+                self.qgsProject = mapData["qgis_project"]
+                self.baseGroups = mapData["base_groups"]
+                self.baseGroupIdxs = range(len(self.baseGroups))
+                self.boundaryLayerName = mapData["boundary_layer"]
+                if mapData["enable_reference"] == "Yes":
+                    self.enableReference = True
+                else: 
+                    self.enableReference = False
+                self.referenceLayerName = mapData["reference_layer"]
+                self.minDenom = int(mapData["max_scale"].split(':')[1].replace(',',''))
+                self.maxDenom = int(mapData["min_scale"].split(':')[1].replace(',',''))
+                if mapData["zoom_notices"] == "Yes":
+                    self.showZoomNotices = True
+                else:
+                    self.showZoomNotices = False
+                if 'custom_fields' in self.projDict["projects"][str(self.projId)]:
+                    self.customFields = self.projDict["projects"][str(self.projId)]['custom_fields']
+                else:
+                    self.customFields = []
+                # test options fileds by adding definitions here and later replace
+                # with proper read statement from project-info.json
+#                self.customFields = [{"code": "AnimalCount", "type": "in", "name": "Animal Count"}, 
+#                 {"code": "IdConfidence", "type": "sl", "name": "Identification Confidence", "args": "3=High\n2=Medium\n1=Low"},
+#                 {"code": "Pipeline", "type": "sl", "name": "Pipepline", "args": "E=Existing\nP=Planned\nN=Newly Built"}, 
+#                 {"code": "TextBox", "type": "tb", "name": "Text Box Field"}, 
+#                 {"code": "TextArea", "type": "ta", "name": "Text Area Field"}, 
+#                 {"code": "Decimal", "type": "dm", "name": "Decimal Field"}, 
+#                 {"code": "DateField", "type": "dt", "name": "Date Field"}, 
+#                 {"code": "TimeField", "type": "tm", "name": "Time Field"}, 
+#                 {"code": "DateTimeField", "type": "d&t", "name": "Date Time Field"}, 
+#                 {"code": "WebAddress", "type": "url", "name": "Web Address"}]
+                if len(self.projDict["projects"][str(self.projId)]['default_time_periods']) == 0:
+                    usePeriod = False
+                else:
+                    usePeriod = True
+                if len(self.projDict["projects"][str(self.projId)]['default_time_of_year']) == 0:
+                    timeOfYear = False
+                else:
+                    timeOfYear = True
+                self.optionalFields = {'usePeriod':usePeriod,'timeOfYear':timeOfYear}
+                return(0)
             
-
     #
     # write lmb file
     #
@@ -806,20 +807,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.close()
 
     #
-    # lmb mode drop down
-    #
-    #def lmbModeSelect(self):
-
-        # set mode
-        #if self.cbMode.currentText() == 'Import Interview':
-            #self.lmbMode = 'Import'
-        #elif self.cbMode.currentText() == 'Transcribe':
-            #self.lmbMode = 'Transcribe'
-        #elif self.cbMode.currentText() == 'Conduct Interview':
-            #self.lmbMode = 'Interview'
-        #self.setLMBMode()
-        
-    #
     # lmb mode menu options
     #
     def lmbModeMenuInterview(self):
@@ -828,12 +815,18 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.lmbMode = 'Interview'
         self.setLMBMode()
 
+    #
+    # lmb mode menue import
+    #
     def lmbModeMenuImport(self):
         
         self.modeButton.setText('LMB Mode: Import')
         self.lmbMode = 'Import'
         self.setLMBMode()
 
+    #
+    # lmb mode menu transcribe
+    #
     def lmbModeMenuTranscribe(self):
         
         self.modeButton.setText('LMB Mode: Transcribe')
@@ -855,10 +848,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.baseLoadLayers()
         self.twSectionContent.setCurrentIndex(0)
         # start loading
-        try:
-            self.disconnectInterviewControls()
-        except:
-            pass 
         self.lblTimer.setText("00:00:00")
         self.lblTimer.setToolTip('0 seconds elapsed in interview')
         # populate lists accordingly
@@ -1006,7 +995,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # adjust interface according to mode
         self.toolBarEnableDisableAudio()
         # activate pan tool
-        self.connectInterviewControls()
         self.interviewSelect(0)
         if self.debug and self.debugDepth >= 4:
             QgsMessageLog.logMessage(self.myself() + " (finishing)")
@@ -1036,7 +1024,29 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 pass
         self.setParent(None)
 
+    #
+    # check if string is a valid email
+    #
+    def emailIsValid(self, email):
 
+        match = re.search(r'[\w.-]+@[\w.-]+.\w+', email)
+        if match:
+            return True
+        else:
+            return False
+    
+    #
+    # check if string is a valid url
+    #
+    def urlIsValid(self, url):
+        
+        parsed = urlparse.urlparse(url)
+        if parsed.netloc == '':
+            return False
+        else:
+            return True
+
+    #
     #####################################################
     #       time operations and notification            #
     #####################################################
@@ -1095,7 +1105,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         timeString = '%02d:%02d:%02d' % (hrs,mins,remSecs)
         return(timeString)
 
-    
+    #
     #####################################################
     #      open, close and manage interviews            #
     #####################################################
@@ -1642,7 +1652,453 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.interviewLoadList()
         self.interviewSelect(0)
 
+    #
+    #####################################################
+    #                 custom fields                     #
+    #####################################################
+    
+    #
+    # configure optional and custom fields
+    #
+    def customFieldsConfigure(self):
+            
+        if self.debug and self.debugDepth >= 1:
+            QgsMessageLog.logMessage(self.myself())
+        # show or hide optional fields
+        if self.optionalFields['usePeriod'] == True:
+            self.lblUsePeriod.setVisible(True)
+            self.cbUsePeriod.setVisible(True)
+        else:
+            self.lblUsePeriod.setVisible(False)
+            self.cbUsePeriod.setVisible(False)
+        if self.optionalFields['timeOfYear'] == True:
+            self.lblTimeOfYear.setVisible(True)
+            self.cbTimeOfYear.setVisible(True)
+        else:
+            self.lblTimeOfYear.setVisible(False)
+            self.cbTimeOfYear.setVisible(False)
+        # add custom fields if needed
+        # look for a 'required' data element with value sof True/False field for optional or required fields
+        self.customWidgets = []
+        for cf in self.customFields:
+            rCnt = self.grSectionEdit.rowCount()
+            if cf['type'] == 'tb':
+                # text box
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
+            elif cf['type'] == 'ta':
+                # text area
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QPlainTextEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged()",'required':cf['required']})
+            elif cf['type'] == 'sl':
+                # select list
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QComboBox()
+                if cf['required'] == False:
+                    codes = ['']
+                    labels = ['--None--']
+                else:
+                    widget.setStyleSheet("border: 1px solid red;")
+                    codes = []
+                    labels = []
+                argList = cf['args'].split('\n')
+                for arg in argList:
+                    a,b = arg.split('=')
+                    codes.append(a)
+                    labels.append(b)
+                widget.addItems(labels)
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"currentIndexChanged(int)",'codes':codes,'required':cf['required']})
+            elif cf['type'] == 'in':
+                # integer
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                validator = QtGui.QIntValidator()
+                widget.setValidator(validator)
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
+            elif cf['type'] == 'dm':
+                # decimal
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                validator = QtGui.QDoubleValidator()
+                widget.setValidator(validator)
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
+            elif cf['type'] == 'dt':
+                # date
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                widget.setInputMask('9999-99-99')
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':'textChanged(QString)','required':cf['required']})
+            elif cf['type'] == 'tm':
+                # time
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                widget.setInputMask('99:99')
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
+            elif cf['type'] == 'd&t':
+                # date and time
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                widget.setInputMask('9999-99-99 99:99')
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
+            elif cf['type'] == 'url':
+                # url
+                # create and place label
+                label = QtGui.QLabel()
+                label.setText(cf['name'])
+                self.grSectionEdit.addWidget(label,rCnt,0)
+                label.setVisible(True)
+                # create widget
+                widget = QtGui.QLineEdit()
+                if cf['required'] == True:
+                    widget.setStyleSheet("border: 1px solid red;")
+                regex = QtCore.QRegExp('^(https?:\/\/)?([\da-zA-Z\.-]+)\.([a-zA-Z\.]{2,6})([\/\w\.-]*)*\/?$')
+                validator = QtGui.QRegExpValidator(regex)
+                widget.setValidator(validator)
+                widget.clear()
+                self.grSectionEdit.addWidget(widget,rCnt,1)
+                widget.setVisible(True)
+                # create dictionary to enable / disable interface based on editing
+                self.customWidgets.append({'code':cf['code'],'label':label,'type':cf['type'],'widget':widget,'signal':"textChanged(QString)",'required':cf['required']})
 
+    #
+    # load section custom field values
+    #
+    def customFieldsLoad(self):
+        
+        if self.debug and self.debugDepth >= 1:
+            QgsMessageLog.logMessage(self.myself())
+        for cf in self.customWidgets:
+            if cf['type'] == 'tb':
+                # text box
+                if cf['code'] in self.sectionData:
+                    cf['widget'].setText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].setText('')
+            elif cf['type'] == 'ta':
+                # text area
+                if cf['code'] in self.sectionData:
+                    cf['widget'].setPlainText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].setPlainText('')
+            elif cf['type'] == 'sl':
+                # select list
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setCurrentIndex(cf['codes'].index(self.sectionData[cf['code']]))
+                else:
+                     cf['widget'].setCurrentIndex(0)
+            elif cf['type'] == 'in':
+                # integer
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setText(str(self.sectionData[cf['code']]))
+                else:
+                    cf['widget'].setText('')
+            elif cf['type'] == 'dm':
+                # decimal
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setText(str(self.sectionData[cf['code']]))
+                else:
+                    cf['widget'].setText('')
+            elif cf['type'] == 'dt':
+                # date
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].setText('')
+            elif cf['type'] == 'tm':
+                # time
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].setText('')
+            elif cf['type'] == 'd&t':
+                # date and time
+                if cf['code'] in self.sectionData and self.sectionData[cf['code']] <> '':
+                    cf['widget'].setText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].clear()
+            elif cf['type'] == 'url':
+                # url
+                if cf['code'] in self.sectionData:
+                    cf['widget'].setText(self.sectionData[cf['code']])
+                else:
+                    cf['widget'].setText('')
+        
+    #
+    # save section custom field values
+    #
+    def customFieldsSave(self):
+        
+        if self.debug and self.debugDepth >= 1:
+            QgsMessageLog.logMessage(self.myself())
+        fieldsValid = True
+        messageText = ''
+        for cf in self.customWidgets:
+            if cf['type'] == 'tb':
+                # text box
+                if cf['required'] and cf['widget'].text() == '':
+                    fieldsValid = False
+                    messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    self.sectionData[cf['code']] = cf['widget'].text()
+            elif cf['type'] == 'ta':
+                # text area
+                if cf['required'] and cf['widget'].document().toPlainText() == '':
+                    fieldsValid = False
+                    messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    self.sectionData[cf['code']] = cf['widget'].document().toPlainText()
+            elif cf['type'] == 'sl':
+                # select list
+                self.sectionData[cf['code']] = cf['codes'][cf['widget'].currentIndex()]
+            elif cf['type'] == 'in':
+                # integer
+                if cf['required'] == True:
+                    try:
+                        val = int(cf['widget'].text())
+                        self.sectionData[cf['code']] = val
+                    except:
+                        fieldsValid = False
+                        messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    if cf['widget'].text() == '':
+                        self.sectionData[cf['code']] = ''
+                    else:
+                        try:
+                            val = int(cf['widget'].text())
+                            self.sectionData[cf['code']] = val
+                        except:
+                            fieldsValid = False
+                            messageText += '"%s" is optional and it does not have a valid or blank value\n' % cf['label'].text()
+            elif cf['type'] == 'dm':
+                # decimal
+                if cf['required'] == True:
+                    try:
+                        val = float(cf['widget'].text())
+                        self.sectionData[cf['code']] = val
+                    except:
+                        fieldsValid = False
+                        messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    if cf['widget'].text() == '':
+                        self.sectionData[cf['code']] = ''
+                    else:
+                        try:
+                            val = float(cf['widget'].text())
+                            self.sectionData[cf['code']] = val
+                        except:
+                            fieldsValid = False
+                            messageText += '"%s" is optional and it does not have a valid or blank value\n' % cf['label'].text()
+            elif cf['type'] == 'dt':
+                # date
+                if cf['required'] == True:
+                    try:
+                        a = datetime.datetime.strptime(cf['widget'].text(),"%Y-%m-%d")
+                        self.sectionData[cf['code']] = cf['widget'].text()
+                    except:
+                        fieldsValid = False
+                        messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    if cf['widget'].text().strip(' -:') == '':
+                        self.sectionData[cf['code']] = ''
+                    else:
+                        try:
+                            a = datetime.datetime.strptime(cf['widget'].text(),"%Y-%m-%d")
+                            self.sectionData[cf['code']] = cf['widget'].text()
+                        except:
+                            fieldsValid = False
+                            messageText += '"%s" is optional and it does not have a valid or blank value\n' % cf['label'].text()
+            elif cf['type'] == 'tm':
+                # time
+                if cf['required'] == True:
+                    try:
+                        a = datetime.datetime.strptime(cf['widget'].text(),"%H:%M")
+                        self.sectionData[cf['code']] = cf['widget'].text()
+                    except:
+                        fieldsValid = False
+                        messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    if cf['widget'].text().strip(' -:') == '':
+                        self.sectionData[cf['code']] = ''
+                    else:
+                        try:
+                            a = datetime.datetime.strptime(cf['widget'].text(),"%H:%M")
+                            self.sectionData[cf['code']] = cf['widget'].text()
+                        except:
+                            fieldsValid = False
+                            messageText += '"%s" is optional and it does not have a valid or blank value\n' % cf['label'].text()
+            elif cf['type'] == 'd&t':
+                # date and time
+                if cf['required'] == True:
+                    try:
+                        a = datetime.datetime.strptime(cf['widget'].text(),"%Y-%m-%d %H:%M")
+                        self.sectionData[cf['code']] = cf['widget'].text()
+                    except:
+                        fieldsValid = False
+                        messageText += '"%s" is required and it does not have a valid value\n' % cf['label'].text()
+                else:
+                    if cf['widget'].text().strip(' -:') == '':
+                        self.sectionData[cf['code']] = ''   
+                    else:
+                        try:
+                            a = datetime.datetime.strptime(cf['widget'].text(),"%Y-%m-%d %H:%M")
+                            self.sectionData[cf['code']] = cf['widget'].text()
+                        except:
+                            fieldsValid = False
+                            messageText += '"%s" is optional and it does not have a valid or blank value\n' % cf['label'].text()
+            elif cf['type'] == 'url':
+                # url
+                if cf['required'] and cf['widget'].text() == '':
+                    fieldsValid = False
+                    messageText += '"%s" is required and does not have a valid value\n' % cf['label'].text()
+                else:
+                    self.sectionData[cf['code']] = cf['widget'].text()
+        return (fieldsValid, messageText)
+
+    #
+    # add custom fields with defaults to new section
+    # since heritage provides no default option for required fields
+    # this code will generate one and will require staff to be trained
+    # to check this value
+    #
+    def customFieldsAdd(self,tempDict):
+        
+        if self.debug and self.debugDepth >= 1:
+            QgsMessageLog.logMessage(self.myself())
+        for cf in self.customWidgets:
+            if cf['type'] == 'tb':
+                # text box
+                if cf['required'] == True:
+                    tempDict[cf['code']] = 'Value needed!'
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'sl':
+                # select list
+                tempDict[cf['code']] = cf['codes'][cf['widget'].currentIndex()]
+            elif cf['type'] == 'in':
+                # integer
+                if cf['required'] == True:
+                    tempDict[cf['code']] = 0
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'dm':
+                # decimal
+                if cf['required'] == True:
+                    tempDict[cf['code']] = 0.0
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'dt':
+                # date
+                if cf['required'] == True:
+                    tempDict[cf['code']] = datetime.datetime.now().isoformat()[:10]
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'tm':
+                # time
+                if cf['required'] == True:
+                    tempDict[cf['code']] = datetime.datetime.now().isoformat()[11:16]
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'd&t':
+                # date and time
+                if cf['required'] == True:
+                    tempDict[cf['code']] = datetime.datetime.now().isoformat()[:16].replace('T',' ')
+                else:
+                    tempDict[cf['code']] = ''
+            elif cf['type'] == 'url':
+                # url
+                if cf['required'] == True:
+                    tempDict[cf['code']] = 'https://louistoolkit.ca'
+                else:
+                    tempDict[cf['code']] = ''
+        
+        return(tempDict)
+
+    #
     #####################################################
     #              section edit controls                #
     #####################################################
@@ -1839,7 +2295,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             # enable save or cancel
             self.sectionEnableSaveCancel()
 
-
+    #
     #####################################################
     #   section selection, creation and deletion        #
     #####################################################
@@ -1910,14 +2366,16 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.lblLegacyCode.setText('LC: %s' % self.sectionData["legacy_code"])
         else:
             self.lblLegacyCode.setText('LC: None')
-        # return to view state
-        self.featureState = oldState
+        # load custom fields
+        self.customFieldsLoad()
         # add photos to tab if visible
         self.twPhotos.clear()
         self.twPhotos.setRowCount(0)
         self.currentMediaFiles = self.sectionData["media_files"]
         self.photosLoaded = False
         self.sectionCheckTabs()
+        # return to view state
+        self.featureState = oldState
         
     #
     # section load photos
@@ -2186,6 +2644,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             "date_modified": self.section_date_modified,
             "recording_datetime": self.section_date_recorded
         }
+        temp = self.customFieldsAdd(temp)
         self.intvDict[self.currentSectionCode] = temp
         self.sectionData = deepcopy(temp)
         self.interviewFileSave()
@@ -2397,12 +2856,17 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.sectionData["media_end_time"] = newEnd
                 self.audioEndPosition = newEnd
                 self.hsSectionMedia.setMaximum(self.audioEndPosition)
-        self.intvDict[self.currentSectionCode] = deepcopy(self.sectionData)
-        self.interviewFileSave()
-        self.previousPrimaryCode = self.currentPrimaryCode
-        self.sectionDisableSaveCancel()
-        self.sectionGeometryState = "Unchanged"
-        self.featureState = 'View'
+        valid,message = self.customFieldsSave()
+        if not valid:
+            QtGui.QMessageBox.warning(self, 'Data Error',
+                    message, QtGui.QMessageBox.Ok)
+        else:
+            self.intvDict[self.currentSectionCode] = deepcopy(self.sectionData)
+            self.interviewFileSave()
+            self.previousPrimaryCode = self.currentPrimaryCode
+            self.sectionDisableSaveCancel()
+            self.sectionGeometryState = "Unchanged"
+            self.featureState = 'View'
 
     #
     # cascade media indexes backward in time
@@ -3116,7 +3580,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.currentFeature = gs
         return
 
-
+    #
     #####################################################
     #               section text search                 #
     #####################################################
@@ -3178,7 +3642,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             QtGui.QMessageBox.information(self, 'Search',
                 message, QtGui.QMessageBox.Ok)
 
-    
+    #
     #####################################################
     #               audio operations                    #
     #####################################################
@@ -3419,15 +3883,17 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.tbMediaPlay.setIcon(QtGui.QIcon(":/plugins/mapbiographer/media_pause.png"))
             self.mediaState = 'playing'
 
-
     #
-    # lmb audio menu
+    # lmb audio menu test
     #
     def lmbAudioSelected(self):
         
         self.lmbAudioRecord = True
         self.audioTest()
     
+    #
+    # lmb audio menu to not test
+    #
     def lmbAudioNotSelected(self):
         
         self.lmbAudioRecord = False
@@ -3518,10 +3984,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.recordAudio = False
             # no audio recording
             self.pbStart.setEnabled(True)
-            #if len(self.deviceList) > 0:
-            #    self.setWindowTitle('LMB Collector - (Audio Device: %s) - Recording Disabled' % self.audioDeviceName)
-            #else:
-            #    self.setWindowTitle('LMB Collector - (No Audio Device Found) - Recording Disabled')
 
     #
     # notify of audio status during recording
@@ -3616,7 +4078,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.thread.wait()
         self.thread.deleteLater()        
 
-    
+    #
     #####################################################
     #               map navigation                      #
     #####################################################
@@ -3739,7 +4201,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.makePolygonButton.setVisible(True)
             self.sketchButton.click()
         
-    
+    #
     #####################################################
     #                   map tools                       #
     #####################################################
@@ -4395,7 +4857,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         featId = self.sectionGetFeatureId(self.polygons_layer, self.currentSectionCode) 
         self.polygons_layer.select(featId)        
 
-
+    #
     #####################################################
     #              sketch functions                     #
     #####################################################
@@ -4450,7 +4912,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.sketchButton.setChecked(False)
             self.eraseButton.setChecked(False)
 
-    
     #
     # action on clicking sketch erase button
     #
@@ -4619,7 +5080,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             jml.run()
             sketchLayer.commitChanges()
 
-
+    #
     #####################################################
     #                   photos                          #
     #####################################################
@@ -4739,7 +5200,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.pbRemovePhoto.setDisabled(True)
                 self.pbEditPhoto.setDisabled(True)
 
-            
+    #
     #####################################################
     #                     data import                   #
     #####################################################
@@ -4814,12 +5275,25 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 progress.setWindowTitle('Import progress')
                 progress.setWindowModality(QtCore.Qt.WindowModal)
                 # add features one by one to dictionary
+                sequenceList = []
                 for feature in features:
                     # increment and notify
                     x += 1
+                    attrs = feature.attributes()
                     # set current sequence to x + the maxCodeNumber in case
                     # more than one import into an interview
-                    self.currentSequence = x + self.maxCodeNumber
+                    if dataDict['sequence'] <> '--None--':
+                        idx = fieldDict[dataDict['sequence']][0]
+                        docSeq = str(attrs[idx])
+                        if docSeq not in sequenceList:
+                            self.currentSequence = int(docSeq)
+                            sequenceList.append(int(docSeq))
+                        else:
+                            self.currentSequence = int(docSeq) + 5000
+                            sequenceList.append(int(docSeq) + 5000)
+                    else:
+                        self.currentSequence = x + self.maxCodeNumber
+                        sequenceList.append(self.currentSequence)
                     if (float(x)/cnt*100)+5 > lastPercent:
                         lastPercent = float(x)/cnt*100
                         progress.setValue(lastPercent)
@@ -4828,7 +5302,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                     # get geometry and attributes
                     geom = feature.geometry()
                     geom.transform(coordTransform)
-                    attrs = feature.attributes()
                     # process attributes
                     if dataDict['sectionCode'] <> '--Create On Import--':
                         idx = fieldDict[dataDict['sectionCode']][0]
@@ -5267,7 +5740,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             output.writeframes(w.readframes(w.getnframes()))
             w.close()
         output.close()
-        
+
+    #
     #####################################################
     #                     base layers                   #
     #####################################################

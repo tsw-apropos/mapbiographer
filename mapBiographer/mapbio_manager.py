@@ -116,8 +116,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # project details tab states
         QtCore.QObject.connect(self.leProjectCode, QtCore.SIGNAL("textChanged(QString)"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteProjectDescription, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
-        QtCore.QObject.connect(self.leProjectTags, QtCore.SIGNAL("textChanged(QString)"), self.projectDetailsEnableEdit)
-        QtCore.QObject.connect(self.pteProjectNote, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
+        QtCore.QObject.connect(self.cbUseHeritage, QtCore.SIGNAL("stateChanged(int)"), self.projectHeritageUse)
         QtCore.QObject.connect(self.pteContentCodes, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteDateAndTime, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteTimeOfYear, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
@@ -200,7 +199,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         tv.selectionModel().clear()
         self.iface.newProject()
         self.close()
-
 
     #
     ########################################################
@@ -365,7 +363,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # dialog close
         self.pbDialogClose.setEnabled(True)
         
-        
     #
     # save qgis LMB settings
     #
@@ -415,7 +412,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #   
     # test system libraries and plugins
     #
-    
     def qgsTestSystem(self):
         
         try:
@@ -474,6 +470,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             QtGui.QMessageBox.critical(self, 'Error',
                 messageText, QtGui.QMessageBox.Ok)
             return(0)
+
     #
     # setup audio libraries
     #
@@ -549,7 +546,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             else:
                 return(0)
             
-
     #
     ########################################################
     #                   LMB File Functions                 #
@@ -622,6 +618,25 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 self.qgsSettingsDisableEdit()
                 self.participantDisableEdit()
                 self.interviewDisableEdit()
+    
+    #
+    # project heritage use
+    #
+    def projectHeritageUse(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        if self.cbUseHeritage.isChecked():
+            self.pteDateAndTime.setReadOnly(True)
+            self.pteTimeOfYear.setReadOnly(True)
+            self.pteContentCodes.setReadOnly(True)
+            self.tbSortCodes.setVisible(False)
+        else:
+            self.pteDateAndTime.setReadOnly(False)
+            self.pteTimeOfYear.setReadOnly(False)
+            self.pteContentCodes.setReadOnly(False)
+            self.tbSortCodes.setVisible(True)
+        self.projectDetailsEnableEdit()
 
     #
     # refresh project list
@@ -648,7 +663,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                     self.projIdMax = int(key)
  
         self.cbCurrentProject.setCurrentIndex(idx)
-
 
     # 
     # project codes convert list to Text
@@ -804,7 +818,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             # dialog close
             self.pbDialogClose.setDisabled(True)
         
-        
     #
     # disable editing of project settings
     #
@@ -903,10 +916,44 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         projData = self.projDict["projects"][str(self.projId)]
         self.leProjectCode.setText(projData["code"])
         self.pteProjectDescription.setPlainText(projData["description"])
-        self.pteProjectNote.setPlainText(projData["note"])
-        self.leProjectTags.setText(",".join(projData["tags"]))
-        self.pteProjectCitation.setPlainText(projData["citation"])
-        self.pteProjectSource.setPlainText(projData["source"])
+        otherText = 'Note: %s\n' % projData["note"]
+        otherText += 'Tags: %s\n' % ",".join(projData["tags"])
+        otherText += 'Citation: %s\n' % projData["citation"]
+        otherText += 'Source: %s\n' % projData["source"]
+        if 'use_heritage' in projData:
+            if projData['use_heritage'] == True:
+                self.cbUseHeritage.setChecked(True)
+            else:
+                self.cbUseHeritage.setChecked(False)
+        else:
+            self.cbUseHeritage.setChecked(False)
+        self.pteProjectOther.setPlainText(otherText)
+        if 'custom_fields' in projData:
+            fldText = ''
+            for fld in projData['custom_fields']:
+                if fld['type'] in ('tb','ta'):
+                    fType = 'Text'
+                elif fld['type'] == 'dm':
+                    fType = 'Decimal'
+                elif fld['type'] == 'in':
+                    fType = 'Integer'
+                elif fld['type'] == 'sl':
+                    fType = 'Select'
+                elif fld['type'] == 'dt':
+                    fType = 'Date'
+                elif fld['type'] == 'tm':
+                    fType = 'Time'
+                elif fld['type'] == 'd&t':
+                    fType = 'Date and Time'
+                elif fld['type'] == 'url':
+                    fType = 'Web Address'
+                if fld['required'] == True:
+                    fldText += '%s (Type: %s, Value Required)\n' % (fld['name'],fType)
+                else:
+                    fldText += '%s (Type: %s, Value Optional)\n' % (fld['name'],fType)
+        else:
+            fldText = 'No custom fields defined'
+        self.pteCustomFields.setPlainText(fldText)
         self.pteDateAndTime.setPlainText(self.projectCodesListToText(projData["default_time_periods"]))
         self.pteTimeOfYear.setPlainText(self.projectCodesListToText(projData["default_time_of_year"]))
         self.pteContentCodes.setPlainText(self.projectCodesListToText(projData["default_codes"]))
@@ -952,19 +999,13 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         
         projData = self.projDict["projects"][str(self.projId)]
         projData["description"] = self.pteProjectDescription.toPlainText()
-        projData["note"] = self.pteProjectNote.toPlainText()
-        tagText = self.leProjectTags.text()
-        if tagText == "":
-            projTags = []
-        else:
-            tagList = tagText.split(",")
-            projTags = [tag.strip() for tag in tagList]
-        projData["tags"] = projTags
-        projData["citation"] = self.pteProjectCitation.toPlainText()
-        projData["source"] = self.pteProjectSource.toPlainText()
         projData["default_time_periods"] = self.projectCodesTextToList(self.pteDateAndTime.toPlainText())
         projData["default_time_of_year"] = self.projectCodesTextToList(self.pteTimeOfYear.toPlainText())
         projData["default_codes"] = self.projectCodesTextToList(self.pteContentCodes.toPlainText())
+        if self.cbUseHeritage.isChecked():
+            projData['use_heritage'] = True
+        else:
+            projData['use_heritage'] = False
         #
         # check if default codes have been removed
         oldList = self.projDict["projects"][str(self.projId)]["default_codes"]
@@ -1012,7 +1053,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def projectDetailsCancel(self):
 
-        self.projectFileRead()
         self.projectLoad()
         self.projectDetailsDisableEdit()
         
@@ -1034,7 +1074,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             self.cbMaxScale.setCurrentIndex(self.cbMinScale.currentIndex())
         self.projectMapSettingsEnableEdit()
 
-
+    #
     ########################################################
     #           LMB Project QGIS Project Settings          #
     ########################################################
@@ -2496,7 +2536,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         #
         # need to add code here to check for documents with content and confirm or prevent
         # deletion, including deletion of media files
-        intvFileName = "lmb-p%d-i%d-data.json" % (self.projId,self.intvId)
+        intvFileName = "lmb-p%d-i%d-data.json" % (int(self.projId),int(self.intvId))
         if os.path.exists(os.path.join(self.dirName, intvFileName)):
             hasContent = True
         else:

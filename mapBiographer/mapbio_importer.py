@@ -69,6 +69,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         QtCore.QObject.connect(self.cbLegacyCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbSectionCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbPrimaryCode, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
+        QtCore.QObject.connect(self.cbSequence, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbContentCodes, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
         QtCore.QObject.connect(self.cbTags, QtCore.SIGNAL("currentIndexChanged(int)"), self.disableImport)
@@ -94,6 +95,8 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         # clear controls and enter basic defaults
         self.cbPrimaryCode.clear()
         self.cbPrimaryCode.addItem('--None--')
+        self.cbSequence.clear()
+        self.cbSequence.addItem('--None--')
         self.cbLegacyCode.clear()
         self.cbLegacyCode.addItem('--None--')
         self.cbSectionCode.clear()
@@ -147,8 +150,9 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
                     self.lwASFields.addItem(field.name())
                     self.cbUsePeriod.addItem(field.name())
                     self.cbRecordingDate.addItem(field.name())
-                elif field.typeName() == 'Integer':
+                elif field.typeName() in ('Integer','Integer64'):
                     self.cbLegacyCode.addItem(field.name())
+                    self.cbSequence.addItem(field.name())
                 elif field.typeName() == 'Real':
                     self.cbLegacyCode.addItem(field.name())
                 elif field.typeName() == 'Date':
@@ -193,6 +197,10 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
             PrimaryIdx = self.fieldDict[self.cbPrimaryCode.currentText()][0]
         else:
             PrimaryIdx = -1
+        if self.cbSequence.currentText() <> '--None--':
+            SequenceIdx = self.fieldDict[self.cbSequence.currentText()][0]
+        else:
+            SequenceIdx = -1
         if self.cbSecurity.currentText() <> '--None--':
             SecurityIdx = self.fieldDict[self.cbSecurity.currentText()][0]
         else:
@@ -425,6 +433,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         self.importDict = {}
         self.importDict['source'] = self.leSourceFile.text()
         self.importDict['primaryCode'] = self.cbPrimaryCode.currentText()
+        self.importDict['sequence'] = self.cbSequence.currentText()
         self.importDict['legacyCode'] = self.cbLegacyCode.currentText()
         self.importDict['sectionCode'] = self.cbSectionCode.currentText()
         self.importDict['security'] = self.cbSecurity.currentText()
