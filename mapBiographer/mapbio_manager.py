@@ -429,16 +429,16 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             # test plugins
             if 'redLayer' in plugins:
                 if 'joinmultiplelines' in plugins:
-                    messageText = messageText + ' The Red Layer and Multiline Join Plugins are installed.'
+                    messageText = messageText + ' The Red Layer and Join Multiple Lines are installed.'
                 else:
-                    messageText = messageText + ' The Red Layer Plugin is installed but the Multiline Join plugin is missing.'
+                    messageText = messageText + ' The Red Layer Plugin is installed but the Join Multiple Lines plugin is missing.'
                     messageText = messageText + ' Please install missing plugin.'
             else:
                 if 'joinmultiplelines' in plugins:
-                    messageText = messageText + ' The Red Layer Plugin is missing. The Multiline Join plugin is installed.'
+                    messageText = messageText + ' The Red Layer Plugin is missing. The Join Multiple Lines plugin is installed.'
                     messageText = messageText + ' Please install missing plugin.'
                 else:
-                    messageText = messageText + ' The Red Layer Plugin and the Multiline Join plugin are missing.'
+                    messageText = messageText + ' The Red Layer Plugin and the Join Multiple Lines plugin are missing.'
                     messageText = messageText + ' Please install missing plugins.'
             QtGui.QMessageBox.information(self, 'System Status',
                 messageText, QtGui.QMessageBox.Ok)
@@ -456,16 +456,16 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             # test plugins
             if 'redLayer' in plugins:
                 if 'joinmultiplelines' in plugins:
-                    messageText = messageText + ' The Red Layer and Multiline Join Plugins are installed.'
+                    messageText = messageText + ' The Red Layer and Join Multiple Lines Plugins are installed.'
                 else:
-                    messageText = messageText + ' The Red Layer Plugin is installed but the Multiline Join plugin is missing.'
+                    messageText = messageText + ' The Red Layer Plugin is installed but the Join Multiple Lines plugin is missing.'
                     messageText = messageText + ' Please install missing plugin.'
             else:
                 if 'joinmultiplelines' in plugins:
-                    messageText = messageText + ' The Red Layer Plugin is missing. The Multiline Join plugin is installed.'
+                    messageText = messageText + ' The Red Layer Plugin is missing. The Join Multiple Lines plugin is installed.'
                     messageText = messageText + ' Please install missing plugin.'
                 else:
-                    messageText = messageText + ' The Red Layer Plugin and the Multiline Join plugin are missing.'
+                    messageText = messageText + ' The Red Layer Plugin and the Join Multiple Lines plugin are missing.'
                     messageText = messageText + ' Please install missing plugins.'
             QtGui.QMessageBox.critical(self, 'Error',
                 messageText, QtGui.QMessageBox.Ok)

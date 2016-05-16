@@ -209,7 +209,9 @@ class transferContent(QtCore.QObject):
             exeName = rv
         if exeName <> '' and os.path.exists(exeName):
             callList = [exeName,srcFile,'-o',destFile]
-            p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'), stdin=subprocess.PIPE, stderr=open(os.devnull,'wb'))
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'),stdin=subprocess.PIPE,stderr=open(os.devnull,'wb'),startupinfo=si)
             p.communicate()
         else:
             return(-1)
@@ -715,17 +717,18 @@ class transferContent(QtCore.QObject):
                     ('note','%s uploaded from Map Biographer' % self.docList[x])
                 ]
                 bData = io.BytesIO(open(fPath,'rb').read()).getvalue()
-                files = [('upload_file','test.zip',bData)]
+                files = [('upload_file',fName,bData)]
                 try:
-                    response = json.loads(self.post_multipart(url, fields, files))
-                    #QgsMessageLog.logMessage(str(response))
-                    if response['result'] == 'error':
-                        errorList.append('%s: %s' % (self.docList[x], response['data']))
+                    responseData = self.post_multipart(url, fields, files)
+                    responseJSON = json.loads(responseData)
+                    #QgsMessageLog.logMessage(str(responseJSON))
+                    if responseJSON['result'] == 'error':
+                        errorList.append('%s: %s' % (self.docList[x], responseJSON['data']))
                     else:
                         successList.append([self.docList[x],self.docKeys[x]])
                 except Exception, e:
                     QgsMessageLog.logMessage(str(e))
-                    errorList.append('%s: connection error' % self.docList[x])
+                    errorList.append('Connection error with interview %s.' % self.docList[x])
             else:
                 QgsMessageLog.logMessage('upload file not found')
         if len(errorList) > 0:
@@ -771,26 +774,22 @@ class transferContent(QtCore.QObject):
             QgsMessageLog.logMessage(str(headers))
         #NOTE: url must be encoded as ascii or may encounter unicode decode errors
         #      on upload because of mixed encodings
-        r = urllib2.Request(url.encode('ascii'), body, headers)
-        reqdata = r.get_data()
-        f = open('mpreqdata.txt','wb')
-        f.write(reqdata)
-        f.close()
+        request = urllib2.Request(url.encode('ascii'), body, headers)
         if processDebug == True:
             QgsMessageLog.logMessage('opening url')
         try:
-            req = urllib2.urlopen(r)
+            response = urllib2.urlopen(request)
         except Exception, e:
             QgsMessageLog.logMessage(str(e))
         except:
             QgsMessageLog.logMessage(str(sys.exc_info()[0]))
         if processDebug == True:
             QgsMessageLog.logMessage('reading response')
-        response = req.read()
+        responseData = response.read()
         if processDebug == True:
             QgsMessageLog.logMessage('response read')
-            QgsMessageLog.logMessage(str(response))
-        return response
+            QgsMessageLog.logMessage(str(responseData))
+        return responseData
 
     #
     # encode body 

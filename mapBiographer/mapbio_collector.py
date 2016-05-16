@@ -4222,7 +4222,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.mapToolsEnableEditing()
                 if self.showZoomNotices and self.zoomMessage <> '':
                     self.iface.messageBar().clearWidgets()
-                    self.iface.messageBar().pushMessage("Proceed", self.zoomMessage, level=QgsMessageBar.INFO, duration=1)            
+                    self.iface.messageBar().pushMessage("Proceed", self.zoomMessage, level=QgsMessageBar.INFO, duration=2)            
             else:
                 self.tbPoint.setBackgroundRole(QtGui.QPalette.BrightText)
                 self.mapToolsDisableDrawing()

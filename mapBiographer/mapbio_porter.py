@@ -314,8 +314,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         values = {'username': self.leUserName.text(), 'password': self.lePassword.text()}
         data = urllib.urlencode(values)
         try:
-            req = urllib2.Request(url,data)
-            response = urllib2.urlopen(req)
+            request = urllib2.Request(url,data)
+            response = urllib2.urlopen(request)
             temp = response.read()
             if self.debug:
                 f = open('response.json','w')
@@ -827,7 +827,12 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 # documents
                 nDocList,dDocList = self.projectIdentifyNewDocuments(serverProjectKey)
                 # custom fields
-                updateCF,newCF,deleteCF = self.projectAssessCustomFields(value['custom_fields'])
+                if 'custom_fields' in value:
+                    updateCF,newCF,deleteCF = self.projectAssessCustomFields(value['custom_fields'])
+                else:
+                    updateCF = []
+                    newCF = []
+                    deleteCF = []
                 # use periods
                 updateUP,newUP,deleteUP = self.projectAssessUsePeriods(value['default_time_periods'])
                 # times of year
@@ -1214,6 +1219,10 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 }
                 docDict[str(intvKey)] = temp
         # create document record
+        if 'custom_fields' in prjSrcDict:
+            cf = prjSrcDict['custom_fields']
+        else:
+            cf = []
         temp = {
             "id": maxId,
             "code": prjSrcDict['code'],
@@ -1230,7 +1239,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             "ln_code": defCode,
             "pl_code": defCode,
             "lmb_map_settings": {},
-            "custom_fields": prjSrcDict['custom_fields'],
+            "custom_fields": cf,
             "documents": docDict,
             "use_heritage": True
         }
