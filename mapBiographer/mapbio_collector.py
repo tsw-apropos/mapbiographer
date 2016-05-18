@@ -1383,6 +1383,11 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             if self.reportTiming:
                 QgsMessageLog.logMessage(str((datetime.datetime.now()-self.initTime).total_seconds()))
         # load layers
+        # check for duplicate names to special lmb layers and remove them
+        layerList = QgsMapLayerRegistry.instance().mapLayers()
+        for key,value in layerList.iteritems():
+            if value.name() in ('lmb_polygons','lmb_lines','lmb_points'):
+                QgsMapLayerRegistry.instance().removeMapLayer(value.id())
         # polygon layer
         self.polygons_layer = QgsVectorLayer('MultiPolygon?crs=epsg:4326&field=section_code:string(20)&index=yes',"lmb_polygons","memory")
         symbol = QgsFillSymbolV2.createSimple({'color':'#ff7800','outline_color':'#717272','outline_width':'0.6'})
