@@ -116,6 +116,8 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # project details tab states
         QtCore.QObject.connect(self.leProjectCode, QtCore.SIGNAL("textChanged(QString)"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteProjectDescription, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
+        QtCore.QObject.connect(self.cbUsePeriod, QtCore.SIGNAL("stateChanged(int)"), self.projectDetailsEnableEdit)
+        QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("stateChanged(int)"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.cbUseHeritage, QtCore.SIGNAL("stateChanged(int)"), self.projectHeritageUse)
         QtCore.QObject.connect(self.pteContentCodes, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
         QtCore.QObject.connect(self.pteDateAndTime, QtCore.SIGNAL("textChanged()"), self.projectDetailsEnableEdit)
@@ -166,7 +168,9 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         QtCore.QObject.connect(self.tblInterviewParticipants, QtCore.SIGNAL("itemSelectionChanged()"), self.interviewParticipantCheckSelection)
         # participant edit selection
         QtCore.QObject.connect(self.cbIntPartName, QtCore.SIGNAL("currentIndexChanged(int)"), self.interviewParticipantSelection)
-        
+        # participant start and end times
+        QtCore.QObject.connect(self.tbUDStart, QtCore.SIGNAL("clicked()"), self.interviewUpdateStart)
+        QtCore.QObject.connect(self.tbUDEnd, QtCore.SIGNAL("clicked()"), self.interviewUpdateEnd)
         # event trigger control variables
         self.qgsProjectChanged = True
         self.projectState = 'load'
@@ -312,7 +316,9 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             elif self.cbCurrentProject.currentIndex() == 0:
                 # select no project
                 self.projId = None
+                self.frProjectMapSettings.setDisabled(True)
             elif self.cbCurrentProject.currentIndex() > 1:
+                self.frProjectMapSettings.setEnabled(True)
                 # select an existing project
                 for key,value in self.projDict["projects"].iteritems():
                     if value["code"] == self.cbCurrentProject.currentText():
@@ -955,7 +961,29 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             fldText = 'No custom fields defined'
         self.pteCustomFields.setPlainText(fldText)
         self.pteDateAndTime.setPlainText(self.projectCodesListToText(projData["default_time_periods"]))
+        if len(projData["default_time_periods"]) > 0:
+            self.cbUsePeriod.setChecked(True)
+            self.cbUsePeriod.setDisabled(True)
+        else:
+            if 'use_period_status' in projData:
+                if projData['use_period_status'] == 'Enabled':
+                    self.cbUsePeriod.setChecked(True)
+                else:
+                    self.cbUsePeriod.setChecked(False)
+            else:
+                self.cbUsePeriod.setChecked(False)
         self.pteTimeOfYear.setPlainText(self.projectCodesListToText(projData["default_time_of_year"]))
+        if len(projData["default_time_of_year"]) > 0:
+            self.cbTimeOfYear.setChecked(True)
+            self.cbTimeOfYear.setDisabled(True)
+        else:
+            if 'time_of_year_status' in projData:
+                if projData['time_of_year_status'] == 'Enabled':
+                    self.cbTimeOfYear.setChecked(True)
+                else:
+                    self.cbTimeOfYear.setChecked(False)
+            else:
+                self.cbTimeOfYear.setChecked(False)
         self.pteContentCodes.setPlainText(self.projectCodesListToText(projData["default_codes"]))
         self.projectUpdateCodeLists(projData)
 
@@ -1002,6 +1030,14 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         projData["default_time_periods"] = self.projectCodesTextToList(self.pteDateAndTime.toPlainText())
         projData["default_time_of_year"] = self.projectCodesTextToList(self.pteTimeOfYear.toPlainText())
         projData["default_codes"] = self.projectCodesTextToList(self.pteContentCodes.toPlainText())
+        if self.cbUsePeriod.isChecked():
+            projData['use_period_status'] = 'Enabled'
+        else:
+            projData['use_period_status'] = 'Disabled'
+        if self.cbTimeOfYear.isChecked():
+            projData['time_of_year_status'] = 'Enabled'
+        else:
+            projData['time_of_year_status'] = 'Disabled'
         if self.cbUseHeritage.isChecked():
             projData['use_heritage'] = True
         else:
@@ -2559,6 +2595,57 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             row = self.tblInterviews.currentRow()
             self.tblInterviews.removeRow(row)
             self.tblInterviews.clearSelection()
+
+    #
+    # interview update start
+    #
+    def interviewUpdateStart(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # open interview file
+        intvFileName = "lmb-p%d-i%d-data.json" % (self.projId,self.intvId)
+        fPath = os.path.join(self.dirName, 'interviews', intvFileName)
+        if os.path.exists(fPath):
+            # scan for earliest datetime
+            f = open(fPath,'r')
+            intvDict = json.loads(f.read())
+            f.close()
+            minDT = None
+            for key,value in intvDict.iteritems():
+                testDT = datetime.datetime.strptime(value["recording_datetime"], "%Y-%m-%d %H:%M")
+                if minDT == None:
+                    minDT = testDT
+                elif testDT < minDT:
+                    minDT = testDT
+            # set start date to earliest datetime
+            self.dteStart.setDateTime(minDT)
+            
+    #
+    # interview update end
+    #
+    def interviewUpdateEnd(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # open interview file
+        intvFileName = "lmb-p%d-i%d-data.json" % (self.projId,self.intvId)
+        fPath = os.path.join(self.dirName, 'interviews', intvFileName)
+        if os.path.exists(fPath):
+            # scan for latest datetime
+            f = open(fPath,'r')
+            intvDict = json.loads(f.read())
+            f.close()
+            maxDT = None
+            for key,value in intvDict.iteritems():
+                testDT = datetime.datetime.strptime(value["recording_datetime"], "%Y-%m-%d %H:%M")
+                if maxDT == None:
+                    maxDT = testDT
+                elif testDT > maxDT:
+                    maxDT = testDT
+            # set end date to latest datetime
+            self.dteEnd.setDateTime(maxDT)
+
 
     #
     ########################################################

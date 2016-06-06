@@ -110,6 +110,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.lineCode = ''
         self.polygonCode = ''
         self.defaultSecurity = 'PR'
+        self.sectionsConnected = False
         # state variables
         self.lmbMode = 'Interview'
         self.featureState = "Empty"
@@ -182,14 +183,14 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         QtCore.QObject.connect(self.tbMoveUp, QtCore.SIGNAL("clicked()"), self.sectionMoveUp)
         QtCore.QObject.connect(self.tbMoveDown, QtCore.SIGNAL("clicked()"), self.sectionMoveDown)
         QtCore.QObject.connect(self.tbSort, QtCore.SIGNAL("clicked()"), self.sectionSort)
-        # buttons
-        QtCore.QObject.connect(self.pbSaveSection, QtCore.SIGNAL("clicked()"), self.sectionSaveEdits)
         # disable CTRL+S for saving project
         self.iface.actionSaveProject().setShortcut("")
         # set shortcut at application level so that not over-ridden by QGIS settings
         self.shortSave = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         self.shortSave.setContext(QtCore.Qt.ApplicationShortcut)
         self.shortSave.activated.connect(self.sectionSaveEdits)
+        # buttons
+        QtCore.QObject.connect(self.pbSaveSection, QtCore.SIGNAL("clicked()"), self.sectionSaveEdits)
         QtCore.QObject.connect(self.pbCancelSection, QtCore.SIGNAL("clicked()"), self.sectionCancelEdits)
         QtCore.QObject.connect(self.pbDeleteSection, QtCore.SIGNAL("clicked()"), self.sectionDelete)
         # photo controls
@@ -224,6 +225,16 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         QtCore.QObject.connect(self.cbFeatures, QtCore.SIGNAL("stateChanged(int)"), self.baseViewFeatures)
         QtCore.QObject.connect(self.cbLabels, QtCore.SIGNAL("stateChanged(int)"), self.baseViewFeatureLabels)
         #
+        # hide optional tools
+        self.lblUPStart.setVisible(False)
+        self.deUPStart.setVisible(False)
+        self.lblUPEnd.setVisible(False)
+        self.deUPEnd.setVisible(False)
+        self.lblTOYMonths.setVisible(False)
+        self.lwTOYMonths.setVisible(False)
+        QtCore.QObject.connect(self.cbUsePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionSelectUsePeriod)
+        QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionSelectTimeOfYear)
+        # create tool bar
         self.toolBarCreate()
         #
         # open project
@@ -246,7 +257,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #
     # create tool bar
     #
-
     def toolBarCreate(self):
 
         self.toolBar = self.iface.addToolBar("LMB Collector Toolbar")
@@ -514,16 +524,18 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         QtCore.QObject.connect(self.tbSearchPrevious, QtCore.SIGNAL("clicked()"), self.textSearchPrevious)
         QtCore.QObject.connect(self.cbSectionSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.cbFeatureSource, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionMapFeatureSourceChanged)
-        QtCore.QObject.connect(self.cbUsePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
-        QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.pteSectionTags, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.pteSectionNote, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.pteSectionText, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         QtCore.QObject.connect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveCodes)
         QtCore.QObject.connect(self.twSectionContent, QtCore.SIGNAL("currentChanged(int)"), self.sectionCheckTabs)
+        QtCore.QObject.connect(self.deUPStart, QtCore.SIGNAL("dateChanged (const QDate&)"), self.sectionUsePeriodStartDateCheck)
+        QtCore.QObject.connect(self.deUPEnd, QtCore.SIGNAL("dateChanged (const QDate&)"), self.sectionUsePeriodEndDateCheck)
+        QtCore.QObject.connect(self.lwTOYMonths, QtCore.SIGNAL("itemSelectionChanged()"), self.sectionEnableSaveCancel)
         # connection custom fields
         for rec in self.customWidgets:
             QtCore.QObject.connect(rec['widget'], QtCore.SIGNAL(rec['signal']), self.sectionEnableSaveCancel)
+        self.sectionsConnected = True
     
     #
     # disconnect section controls
@@ -550,16 +562,18 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         result = QtCore.QObject.disconnect(self.tbSearchPrevious, QtCore.SIGNAL("clicked()"), self.textSearchPrevious)
         result = QtCore.QObject.disconnect(self.cbSectionSecurity, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.cbFeatureSource, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionMapFeatureSourceChanged)
-        result = QtCore.QObject.disconnect(self.cbUsePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
-        result = QtCore.QObject.disconnect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.pteSectionTags, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.pteSectionNote, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.pteSectionText, QtCore.SIGNAL("textChanged()"), self.sectionEnableSaveCancel)
         result = QtCore.QObject.disconnect(self.lwProjectCodes, QtCore.SIGNAL("itemClicked(QListWidgetItem*)"), self.sectionAddRemoveCodes)
         result = QtCore.QObject.disconnect(self.twSectionContent, QtCore.SIGNAL("currentChanged(int)"), self.sectionCheckTabs)
+        result = QtCore.QObject.disconnect(self.deUPStart, QtCore.SIGNAL("dateChanged (const QDate&)"), self.sectionUsePeriodStartDateCheck)
+        result = QtCore.QObject.disconnect(self.deUPEnd, QtCore.SIGNAL("dateChanged (const QDate&)"), self.sectionUsePeriodEndDateCheck)
+        result = QtCore.QObject.disconnect(self.lwTOYMonths, QtCore.SIGNAL("itemSelectionChanged()"), self.sectionEnableSaveCancel)
         # connection custom fields
         for rec in self.customWidgets:
             QtCore.QObject.disconnect(rec['widget'], QtCore.SIGNAL(rec['signal']), self.sectionEnableSaveCancel)
+        self.sectionsConnected = False
         
     #
     # read QGIS settings
@@ -631,26 +645,16 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                     self.customFields = self.projDict["projects"][str(self.projId)]['custom_fields']
                 else:
                     self.customFields = []
-                # test options fileds by adding definitions here and later replace
-                # with proper read statement from project-info.json
-#                self.customFields = [{"code": "AnimalCount", "type": "in", "name": "Animal Count"}, 
-#                 {"code": "IdConfidence", "type": "sl", "name": "Identification Confidence", "args": "3=High\n2=Medium\n1=Low"},
-#                 {"code": "Pipeline", "type": "sl", "name": "Pipepline", "args": "E=Existing\nP=Planned\nN=Newly Built"}, 
-#                 {"code": "TextBox", "type": "tb", "name": "Text Box Field"}, 
-#                 {"code": "TextArea", "type": "ta", "name": "Text Area Field"}, 
-#                 {"code": "Decimal", "type": "dm", "name": "Decimal Field"}, 
-#                 {"code": "DateField", "type": "dt", "name": "Date Field"}, 
-#                 {"code": "TimeField", "type": "tm", "name": "Time Field"}, 
-#                 {"code": "DateTimeField", "type": "d&t", "name": "Date Time Field"}, 
-#                 {"code": "WebAddress", "type": "url", "name": "Web Address"}]
-                if len(self.projDict["projects"][str(self.projId)]['default_time_periods']) == 0:
-                    usePeriod = False
-                else:
+                if 'use_period_status' in self.projDict["projects"][str(self.projId)] and \
+                self.projDict["projects"][str(self.projId)]['use_period_status'] == 'Enabled':
                     usePeriod = True
-                if len(self.projDict["projects"][str(self.projId)]['default_time_of_year']) == 0:
-                    timeOfYear = False
                 else:
+                    usePeriod = False
+                if 'time_of_year_status' in self.projDict["projects"][str(self.projId)] and \
+                self.projDict["projects"][str(self.projId)]['time_of_year_status'] == 'Enabled':
                     timeOfYear = True
+                else:
+                    timeOfYear = False
                 self.optionalFields = {'usePeriod':usePeriod,'timeOfYear':timeOfYear}
                 return(0)
             
@@ -719,17 +723,17 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.cbFeatureSource.addItems(['none','is unique'])
         self.cbFeatureSource.setCurrentIndex(0)
         # time periods
-        self.project_use_period = ['R','U','N']
+        self.project_use_period = ['R','U','N','C']
         self.cbUsePeriod.clear()
-        self.cbUsePeriod.addItems(['Refused','Unknown','Not Recorded'])
+        self.cbUsePeriod.addItems(['Refused','Unknown','Not Recorded','Custom'])
         for item in projData["default_time_periods"]:
             self.project_use_period.append(item[0])
             self.cbUsePeriod.addItem(item[1])
         self.cbUsePeriod.setCurrentIndex(1)
         # annnual variation
-        self.project_time_of_year = ['R','U','N','SP']
+        self.project_time_of_year = ['R','U','N','SP','C']
         self.cbTimeOfYear.clear()
-        self.cbTimeOfYear.addItems(['Refused','Unknown','Not Recorded','Sporadic'])
+        self.cbTimeOfYear.addItems(['Refused','Unknown','Not Recorded','Sporadic','Custom'])
         for item in projData["default_time_of_year"]:
             self.project_time_of_year.append(item[0])
             self.cbTimeOfYear.addItem(item[1])
@@ -892,26 +896,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.pbRenumberSections.setVisible(True)
             # show tabs
             self.twSectionContent.tabBar().setVisible(True)
-            # check if valid option exist and if so enable interface
-            if len(self.intvList) > 0:
-                self.pbImportFeatures.setEnabled(True)
-                self.pbImportTranscript.setEnabled(True)
-                if lmb_audioEnabled:
-                    self.pbImportAudio.setEnabled(True)
-                self.pbRenumberSections.setEnabled(True)
-                self.tpPhotos.setEnabled(True)
-                self.pbFinish.setEnabled(True)
-                self.frSectionControls.setEnabled(True)
-                self.tbNonSpatial.setEnabled(True)
-            else:
-                self.pbImportFeatures.setDisabled(True)
-                self.pbImportTranscript.setDisabled(True)
-                self.pbImportAudio.setDisabled(True)
-                self.pbRenumberSections.setDisabled(True)
-                self.tpPhotos.setDisabled(True)
-                self.pbFinish.setDisabled(True)
-                self.frSectionControls.setDisabled(True)
-                self.tbNonSpatial.setDisabled(True)
+            self.setWidgetVisibilityAndState()
         elif self.lmbMode == 'Transcribe':
             self.frInterviewActions.setVisible(False)
             if self.scaleConnection == True:
@@ -947,15 +932,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.pbRenumberSections.setVisible(False)
             # show tabs
             self.twSectionContent.tabBar().setVisible(True)
-            # check if valid option exist and if so enable interface
-            if len(self.intvList) > 0:
-                self.tpPhotos.setEnabled(True)
-                self.frSectionControls.setEnabled(True)
-                self.tbNonSpatial.setEnabled(True)
-            else:
-                self.tpPhotos.setDisabled(True)
-                self.frSectionControls.setDisabled(True)
-                self.tbNonSpatial.setDisabled(True)
+            self.setWidgetVisibilityAndState()
         elif self.lmbMode == 'Interview':
             self.frInterviewActions.setVisible(True)
             # control digitizing scale
@@ -1002,6 +979,43 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 QgsMessageLog.logMessage(str((datetime.datetime.now()-self.initTime).total_seconds()))
         self.loading = False
 
+    #
+    # set widget visibility and state
+    #
+    def setWidgetVisibilityAndState(self):
+
+        if self.lmbMode == "Import":
+            # check if valid option exist and if so enable interface
+            if len(self.intvList) > 0:
+                self.pbImportFeatures.setEnabled(True)
+                self.pbImportTranscript.setEnabled(True)
+                if lmb_audioEnabled:
+                    self.pbImportAudio.setEnabled(True)
+                self.pbRenumberSections.setEnabled(True)
+                self.tpPhotos.setEnabled(True)
+                self.pbFinish.setEnabled(True)
+                self.frSectionControls.setEnabled(True)
+                self.tbNonSpatial.setEnabled(True)
+            else:
+                self.pbImportFeatures.setDisabled(True)
+                self.pbImportTranscript.setDisabled(True)
+                self.pbImportAudio.setDisabled(True)
+                self.pbRenumberSections.setDisabled(True)
+                self.tpPhotos.setDisabled(True)
+                self.pbFinish.setDisabled(True)
+                self.frSectionControls.setDisabled(True)
+                self.tbNonSpatial.setDisabled(True)
+        elif self.lmbMode == 'Transcribe':
+            # check if valid option exist and if so enable interface
+            if len(self.intvList) > 0:
+                self.tpPhotos.setEnabled(True)
+                self.frSectionControls.setEnabled(True)
+                self.tbNonSpatial.setEnabled(True)
+            else:
+                self.tpPhotos.setDisabled(True)
+                self.frSectionControls.setDisabled(True)
+                self.tbNonSpatial.setDisabled(True)
+        
     #
     # redefine close event to make sure it closes properly because panel close
     # icon can not be prevented on Mac OS X when panel is floating
@@ -1050,7 +1064,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #       time operations and notification            #
     #####################################################
-    
+    #
     #
     # display clock & write audio file to disk each minute if recording
     #
@@ -1109,7 +1123,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #      open, close and manage interviews            #
     #####################################################
-    
+    #
     #
     # load interview list into combobox
     #
@@ -1655,13 +1669,14 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.interviewUnload()
         # update interview list
         self.interviewLoadList()
+        self.setWidgetVisibilityAndState()
         self.interviewSelect(0)
 
     #
     #####################################################
     #                 custom fields                     #
     #####################################################
-    
+    #
     #
     # configure optional and custom fields
     #
@@ -2107,7 +2122,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #              section edit controls                #
     #####################################################
-    
+    #
     #
     # enable save, cancel and delete buttons
     #
@@ -2304,7 +2319,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #   section selection, creation and deletion        #
     #####################################################
-    
+    #
     #
     # load section record
     #
@@ -2353,13 +2368,27 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 self.cbFeatureSource.setCurrentIndex(0)
         self.pteContentCodes.setPlainText(",".join(self.sectionData["content_codes"]))
         self.pteSectionTags.setPlainText(",".join(self.sectionData["tags"]))
-        self.cbUsePeriod.setCurrentIndex(self.project_use_period.index(self.sectionData["use_period"]))
-        self.cbTimeOfYear.setCurrentIndex(self.project_time_of_year.index(self.sectionData["time_of_year"]))
+        # check if string found in list or if custom use period
+        if self.sectionData["use_period"] in self.project_use_period:
+            self.cbUsePeriod.setCurrentIndex(self.project_use_period.index(self.sectionData["use_period"]))
+        else:
+            self.cbUsePeriod.setCurrentIndex(3)
+            upList = self.sectionData["use_period"].split(':')
+            self.deUPStart.setDate(datetime.datetime.strptime(upList[0].strip(), "%Y-%m-%d"))
+            self.deUPEnd.setDate(datetime.datetime.strptime(upList[1].strip(), "%Y-%m-%d"))
+        # check if string found in list or if custom time of year
+        if self.sectionData["time_of_year"] in self.project_time_of_year:
+            self.cbTimeOfYear.setCurrentIndex(self.project_time_of_year.index(self.sectionData["time_of_year"]))
+        else:
+            self.cbTimeOfYear.setCurrentIndex(4)
+            self.lwTOYMonths.clearSelection()
+            mList = self.sectionData["time_of_year"].split(',')
+            for m in mList:
+                if m <> '':
+                    self.lwTOYMonths.setItemSelected(self.lwTOYMonths.findItems(m,QtCore.Qt.MatchExactly)[0], True)
         self.pteSectionNote.setPlainText(self.sectionData["note"])
-        # deselect items
-        for i in range(self.lwProjectCodes.count()):
-            item = self.lwProjectCodes.item(i)
-            self.lwProjectCodes.setItemSelected(item,False)
+        # deselect code items
+        self.lwProjectCodes.clearSelection()
         # select items
         codeList = self.sectionData["content_codes"]
         #QgsMessageLog.logMessage(str(codeList))
@@ -2412,9 +2441,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
 
         if self.debug and self.debugDepth >= 3:
             QgsMessageLog.logMessage(self.myself())
-        #self.points_layer.deselect(self.points_layer.selectedFeaturesIds())
-        #self.lines_layer.deselect(self.lines_layer.selectedFeaturesIds())
-        #self.polygons_layer.deselect(self.polygons_layer.selectedFeaturesIds())
         self.points_layer.setSelectedFeatures([])
         self.lines_layer.setSelectedFeatures([])
         self.polygons_layer.setSelectedFeatures([])
@@ -2523,6 +2549,62 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         else:
             pCode = self.defaultCode
         return(pCode)
+    
+    #
+    # section select use periods
+    #
+    def sectionSelectUsePeriod(self):
+        
+        # use debug track order of calls
+        if self.debug and self.debugDepth >= 3:
+            QgsMessageLog.logMessage(self.myself())
+        if self.cbUsePeriod.currentIndex() == 3:
+            self.lblUPStart.setVisible(True)
+            self.deUPStart.setVisible(True)
+            self.lblUPEnd.setVisible(True)
+            self.deUPEnd.setVisible(True)
+        else:
+            self.lblUPStart.setVisible(False)
+            self.deUPStart.setVisible(False)
+            self.lblUPEnd.setVisible(False)
+            self.deUPEnd.setVisible(False)
+        if self.sectionsConnected == True:
+            self.sectionEnableSaveCancel()
+
+    #
+    # section select time of year
+    #
+    def sectionSelectTimeOfYear(self):
+        
+        # use debug track order of calls
+        if self.debug and self.debugDepth >= 3:
+            QgsMessageLog.logMessage(self.myself())
+        if self.cbTimeOfYear.currentIndex() == 4:
+            self.lblTOYMonths.setVisible(True)
+            self.lwTOYMonths.setVisible(True)
+        else:
+            self.lblTOYMonths.setVisible(False)
+            self.lwTOYMonths.setVisible(False)
+        if self.sectionsConnected == True:
+            self.sectionEnableSaveCancel()
+
+    #
+    # section use period start date check
+    #
+    def sectionUsePeriodStartDateCheck(self):
+
+        if self.deUPStart.date() > self.deUPEnd.date():
+            self.deUPEnd.setDate(self.deUPStart.date())
+        self.sectionEnableSaveCancel()
+
+    #
+    # section use period end date check
+    #
+    def sectionUsePeriodEndDateCheck(self):
+
+        if self.deUPEnd.date() < self.deUPStart.date():
+            self.deUPStart.setDate(self.deUPEnd.date())
+        self.sectionEnableSaveCancel()
         
     #
     # section calculate section code
@@ -2827,8 +2909,27 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         else:
             tagList = tagText.split(",")
             self.previousTags = [tag.strip() for tag in tagList]
-        self.previousUsePeriod = self.project_use_period[self.cbUsePeriod.currentIndex()]
-        self.previousTimeOfYear = self.project_time_of_year[self.cbTimeOfYear.currentIndex()]
+        # use period
+        idx = self.cbUsePeriod.currentIndex()
+        if idx == 3:
+            upStart = self.deUPStart.dateTime().toPyDateTime().isoformat()[:10]
+            upEnd = self.deUPEnd.dateTime().toPyDateTime().isoformat()[:10]
+            self.previousUsePeriod = '%s : %s' % (upStart,upEnd)
+        else:
+            self.previousUsePeriod = self.project_use_period[idx]
+        # time of year
+        idx = self.cbTimeOfYear.currentIndex()
+        if idx == 4:
+            miList = self.lwTOYMonths.selectedItems()
+            mString = ''
+            for mi in miList:
+                mString += mi.text() + ','
+            if len(mString) > 1:
+                self.previousTimeOfYear = mString[:-1]
+            else:
+                self.previousTimeOfYear = ''
+        else:
+            self.previousTimeOfYear = self.project_time_of_year[idx]
         self.previousNote = self.pteSectionNote.document().toPlainText()
         self.previousText = self.pteSectionText.document().toPlainText()
         self.sectionData["code_type"] = self.currentPrimaryCode
@@ -3589,7 +3690,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #               section text search                 #
     #####################################################
-
+    #
     #
     # set state of text search
     
@@ -4087,7 +4188,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #               map navigation                      #
     #####################################################
-    
+    #
     #
     # zoom in
     #
@@ -4210,7 +4311,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #                   map tools                       #
     #####################################################
-    
+    #
     #
     # map tools scale enable
     #
@@ -4866,7 +4967,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #              sketch functions                     #
     #####################################################
-    
+    #
     #
     # action on clicking sketch draw button
     #
@@ -5089,7 +5190,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #                   photos                          #
     #####################################################
-    
+    #
     #
     # load photo to list
     #
@@ -5209,7 +5310,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #                     data import                   #
     #####################################################
-    
+    #
     #
     # import features
     #
@@ -5227,12 +5328,12 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # Create the dialog (after translation) and keep reference
         s = QtCore.QSettings()
         dirName = s.value('mapBiographer/projectDir')
-        self.importDialog = mapBiographerImporter(self.iface, self.projDict["projects"][str(self.projId)], self.intvDict, self.dirName)
+        self.importDialog = mapBiographerImporter(self.iface, self.projDict["projects"][str(self.projId)], self.intvDict, self.dirName, self.optionalFields, self.customFields, self.lastDir)
         # show the dialog
         self.importDialog.show()
         # Run the dialog event loop
         result = self.importDialog.exec_()
-        dataDict = self.importDialog.returnData()
+        dataDict, self.lastDir = self.importDialog.returnData()
         # use debug track order of calls
         if self.debug and self.debugDepth >= 4:
             QgsMessageLog.logMessage(str(dataDict))
@@ -5409,6 +5510,11 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                         sectionText = outText
                     else:
                         sectionText = ""
+                    if dataDict['spatialRef'] <> '--None--':
+                        idx = fieldDict[dataDict['spatialRef']][0]
+                        geomSrc = str(attrs[idx])           
+                    else:
+                        geomSrc = 'ns'
                     # create temporary entry
                     temp = {
                         "code_type": self.currentPrimaryCode,
@@ -5429,21 +5535,44 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                         "media_start_time": 0,
                         "media_end_time": 0,
                         "the_geom": "",
-                        "geom_source": "ns",
+                        "geom_source": geomSrc,
                         "date_created": datetime.datetime.now().isoformat()[:16].replace('T',' '),
                         "date_modified": datetime.datetime.now().isoformat()[:16].replace('T',' '),
                         "recording_datetime": recording_datetime
                     }
+                    # process custom fields
+                    if dataDict['lmb-custom-fields'] <> {}:
+                        for key,value in dataDict['lmb-custom-fields'].iteritems():
+                            if value[0] <> '--None--':
+                                idx = fieldDict[value[0]][0]
+                                if value[1] == 'in':
+                                    cfValue = int(attrs[idx])
+                                elif value[1] == 'dm':
+                                    cfValue = float(attrs[idx])
+                                elif value[1] == 'dt':
+                                    cfValue = str(attrs[idx])
+                                    try:
+                                        tempDate = datetime.datetime.strptime(cfValue, "%Y-%m-%d")
+                                        cfValue = tempDate.isoformat()[:10]
+                                    except:
+                                        temp = attrs[idx]
+                                        if isinstance(temp, QtCore.QDate):
+                                            temp2 = temp.toPyDate()
+                                            cfValue = temp2.isoformat()[:10]
+                                else:
+                                    cfValue = str(attrs[idx])
+                                temp[key] = cfValue
                     # process and add geometry
-                    if self.currentFeature == "pt":
-                        temp["the_geom"] = geom.exportToWkt()
-                        temp["geom_source"] = "pt"
-                    elif self.currentFeature == "ln":
-                        temp["the_geom"] = geom.exportToWkt()
-                        temp["geom_source"] = "ln"
-                    elif self.currentFeature == "pl":
-                        temp["the_geom"] = geom.exportToWkt()
-                        temp["geom_source"] = "pl"
+                    if geomSrc in ('pt','ln','pl','ns'):
+                        if self.currentFeature == "pt":
+                            temp["the_geom"] = geom.exportToWkt()
+                            temp["geom_source"] = "pt"
+                        elif self.currentFeature == "ln":
+                            temp["the_geom"] = geom.exportToWkt()
+                            temp["geom_source"] = "ln"
+                        elif self.currentFeature == "pl":
+                            temp["the_geom"] = geom.exportToWkt()
+                            temp["geom_source"] = "pl"
                     # add section to dictionary
                     self.intvDict[self.currentSectionCode] = temp
                 # write entire interview to file
@@ -5750,7 +5879,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     #####################################################
     #                     base layers                   #
     #####################################################
-
+    #
     #
     # load base layers
     #
@@ -5828,7 +5957,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         else:
             self.canvas.zoomToFullExtent()
         
-
     #
     # select base map - this doesn't change overview
     #

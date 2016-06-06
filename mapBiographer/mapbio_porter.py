@@ -205,11 +205,19 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 if retVal == 1:
                     messageText = 'Changes additions, deletions and updates were made to the '
                     messageText += 'Heritage data structure. Please update system and review '
-                    messageText += 'automated changes to ensure data is valide before uploading.'
+                    messageText += 'automated changes to ensure data is valid before uploading.'
                     QtGui.QMessageBox.information(self, 'Information',
                         messageText, QtGui.QMessageBox.Ok)
-                else:
+                    self.close()
+                elif retVal == -1:
+                    messageText = 'No matching project found. '
+                    QtGui.QMessageBox.information(self, 'Information',
+                        messageText, QtGui.QMessageBox.Ok)
+                    self.close()
+                elif retVal == 0:
                     self.uploadToHeritagePreparation()
+                else:
+                    self.close()
             else:
                 # start action process in thread
                 self.errorText = ''
@@ -356,6 +364,11 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 self.newProjectsReport()
             else:
                 retVal = self.updateProjectReport()
+                if retVal == -1:
+                    messageText = 'No matching project found. '
+                    QtGui.QMessageBox.information(self, 'Information',
+                        messageText, QtGui.QMessageBox.Ok)
+                    self.close()
         self.resize(500, 450)
         self.pbAllProgress.setValue(0)
         self.pbStepProgress.setValue(0)
@@ -811,6 +824,9 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.addParticipants = False
         # loop through dowloaded projects and documents to assess what 
         # changes or additions are possible for the current project
+        matchFound = False
+        if not isinstance(self.downloadDict, dict):
+            return(-1)
         for key, value in self.downloadDict['data']['projects'].iteritems():
             if value['code'] == projectCode:
                 serverProjectKey = key
@@ -839,6 +855,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 updateToY,newToY,deleteToY = self.projectAssessTimesOfYear(value['default_time_of_year_values'])
                 # content codes
                 updateCC,newCC,deleteCC = self.projectAssessContentCodes(value['default_codes'])
+                matchFound = True
                 break
         # participants
         nPartList = []
@@ -851,61 +868,65 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     dupFound = True
             if dupFound == False:
                 nPartList.append(value['code'])
-        if isUpload == True:
-            if len(updateCF) > 0 or len(newCF) > 0 or len(deleteCF) > 0 or \
-            len(updateUP) > 0 or len(newUP) > 0 or len(deleteUP) > 0 or\
-            len(updateToY) > 0 or len(newToY) > 0 or len(deleteToY) > 0 or \
-            len(updateCC) > 0 or len(newCC) > 0 or len(deleteCC) > 0:
-                return(1)
+        QgsMessageLog.logMessage('participants checked')
+        if matchFound == True:
+            if isUpload == True:
+                if len(updateCF) > 0 or len(newCF) > 0 or len(deleteCF) > 0 or \
+                len(updateUP) > 0 or len(newUP) > 0 or len(deleteUP) > 0 or\
+                len(updateToY) > 0 or len(newToY) > 0 or len(deleteToY) > 0 or \
+                len(updateCC) > 0 or len(newCC) > 0 or len(deleteCC) > 0:
+                    return(1)
+                else:
+                    return(0)
             else:
+                # generate report
+                reportText = ''
+                # additions
+                self.projUpdate = {'newDocs':nDocList,'deleteDocs':dDocList,\
+                    'updateCF':updateCF,'newCF':newCF,'deleteCF':deleteCF,\
+                    'updateUP':updateUP,'newUP':newUP,'deleteUP':deleteUP,\
+                    'updateToY':updateToY,'newToY':newToY,'deleteToY':deleteToY,\
+                    'updateCC': updateCC,'newCC':newCC,'deleteCC':deleteCC}
+                # report updates
+                self.updateExisting,appendText = self.projectReportUpdates(updateCF,updateUP,updateToY,updateCC)
+                self.addToExisting,appendText = self.projectReportAdditions(appendText,nDocList,newCF,newUP,newToY,newCC)
+                self.deleteExisting,appendText = self.projectReportDeletions(appendText,dDocList,deleteCF,deleteUP,deleteToY,deleteCC)
+                reportText += appendText
+                reportText += '\n'
+                buttonText = 'Update '
+                if self.addToExisting or self.deleteExisting or self.updateExisting:
+                    buttonText += 'Current Project'
+                if self.addParticipants:
+                    if len(buttonText) > 8:
+                        buttonText += 'and Participants'
+                    else:
+                        buttonText += 'Participants'
+                self.pbImport.setText(buttonText)
+                # new participants
+                if len(nPartList) > 0:
+                    self.addParticipants = True
+                    reportText += 'The following participants can be imported:\n'
+                    reportText += '%s \n' % ", ".join(nPartList)
+                    self.addParticipants = True
+                else:
+                    reportText += "No new participant records found.\n"
+                    self.addParticipants = False
+                if self.addToExisting or self.addParticipants or \
+                    self.deleteExisting or self.updateExisting:
+                    self.pbImport.setEnabled(True)
+                self.nParticipants = nPartList
+                self.dParticipants = dPartList
+                self.frHeritageLogin.setVisible(False)
+                self.pteReport.setPlainText(reportText)
+                self.frHeritageInfo.setVisible(True)  
+                self.pbImport.setVisible(True)
+                self.pbCancel.setDisabled(True)
+                self.pbUpload.setVisible(False)
+                self.lblProject.setVisible(False)
+                self.cbProject.setVisible(False)
                 return(0)
         else:
-            # generate report
-            reportText = ''
-            # additions
-            self.projUpdate = {'newDocs':nDocList,'deleteDocs':dDocList,\
-                'updateCF':updateCF,'newCF':newCF,'deleteCF':deleteCF,\
-                'updateUP':updateUP,'newUP':newUP,'deleteUP':deleteUP,\
-                'updateToY':updateToY,'newToY':newToY,'deleteToY':deleteToY,\
-                'updateCC': updateCC,'newCC':newCC,'deleteCC':deleteCC}
-            # report updates
-            self.updateExisting,appendText = self.projectReportUpdates(updateCF,updateUP,updateToY,updateCC)
-            self.addToExisting,appendText = self.projectReportAdditions(appendText,nDocList,newCF,newUP,newToY,newCC)
-            self.deleteExisting,appendText = self.projectReportDeletions(appendText,dDocList,deleteCF,deleteUP,deleteToY,deleteCC)
-            reportText += appendText
-            reportText += '\n'
-            buttonText = 'Update '
-            if self.addToExisting or self.deleteExisting or self.updateExisting:
-                buttonText += 'Current Project'
-            if self.addParticipants:
-                if len(buttonText) > 8:
-                    buttonText += 'and Participants'
-                else:
-                    buttonText += 'Participants'
-            self.pbImport.setText(buttonText)
-            # new participants
-            if len(nPartList) > 0:
-                self.addParticipants = True
-                reportText += 'The following participants can be imported:\n'
-                reportText += '%s \n' % ", ".join(nPartList)
-                self.addParticipants = True
-            else:
-                reportText += "No new participant records found.\n"
-                self.addParticipants = False
-            if self.addToExisting or self.addParticipants or \
-                self.deleteExisting or self.updateExisting:
-                self.pbImport.setEnabled(True)
-            self.nParticipants = nPartList
-            self.dParticipants = dPartList
-            self.frHeritageLogin.setVisible(False)
-            self.pteReport.setPlainText(reportText)
-            self.frHeritageInfo.setVisible(True)  
-            self.pbImport.setVisible(True)
-            self.pbCancel.setDisabled(True)
-            self.pbUpload.setVisible(False)
-            self.lblProject.setVisible(False)
-            self.cbProject.setVisible(False)
-            return(0)
+            return(-1)
 
     #
     # new projects report
