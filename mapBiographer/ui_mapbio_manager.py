@@ -769,7 +769,7 @@ class Ui_mapbioManager(object):
         self.tbxInterview.setMinimumSize(QtCore.QSize(440, 315))
         self.tbxInterview.setObjectName(_fromUtf8("tbxInterview"))
         self.pgIntBasic = QtGui.QWidget()
-        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 440, 494))
+        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 233, 440))
         self.pgIntBasic.setObjectName(_fromUtf8("pgIntBasic"))
         self.gridLayout_8 = QtGui.QGridLayout(self.pgIntBasic)
         self.gridLayout_8.setMargin(0)
@@ -1352,7 +1352,7 @@ class Ui_mapbioManager(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.2.2</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.2.4</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-weight:600;\"><br /></p>\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">To submit comments about this version please visit <a href=\"louistoolkit.ca/tools/mapbiographer\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/tools/mapbiographer</span></a> or our contact page at <a href=\"louistoolkit.ca/contact\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/contact</span></a>.</p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"

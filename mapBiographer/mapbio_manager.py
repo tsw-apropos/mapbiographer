@@ -636,11 +636,15 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             self.pteDateAndTime.setReadOnly(True)
             self.pteTimeOfYear.setReadOnly(True)
             self.pteContentCodes.setReadOnly(True)
+            self.cbUsePeriod.setDisabled(True)
+            self.cbTimeOfYear.setDisabled(True)
             self.tbSortCodes.setVisible(False)
         else:
             self.pteDateAndTime.setReadOnly(False)
             self.pteTimeOfYear.setReadOnly(False)
             self.pteContentCodes.setReadOnly(False)
+            self.cbUsePeriod.setEnabled(True)
+            self.cbTimeOfYear.setEnabled(True)
             self.tbSortCodes.setVisible(True)
         self.projectDetailsEnableEdit()
 
@@ -960,30 +964,34 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         else:
             fldText = 'No custom fields defined'
         self.pteCustomFields.setPlainText(fldText)
-        self.pteDateAndTime.setPlainText(self.projectCodesListToText(projData["default_time_periods"]))
-        if len(projData["default_time_periods"]) > 0:
-            self.cbUsePeriod.setChecked(True)
-            self.cbUsePeriod.setDisabled(True)
-        else:
-            if 'use_period_status' in projData:
-                if projData['use_period_status'] == 'Enabled':
-                    self.cbUsePeriod.setChecked(True)
-                else:
-                    self.cbUsePeriod.setChecked(False)
+        if 'use_period_status' in projData:
+            if projData['use_period_status'] == 'Enabled':
+                self.cbUsePeriod.setChecked(True)
             else:
                 self.cbUsePeriod.setChecked(False)
-        self.pteTimeOfYear.setPlainText(self.projectCodesListToText(projData["default_time_of_year"]))
-        if len(projData["default_time_of_year"]) > 0:
-            self.cbTimeOfYear.setChecked(True)
-            self.cbTimeOfYear.setDisabled(True)
         else:
-            if 'time_of_year_status' in projData:
-                if projData['time_of_year_status'] == 'Enabled':
-                    self.cbTimeOfYear.setChecked(True)
-                else:
-                    self.cbTimeOfYear.setChecked(False)
+            if len(projData["default_time_periods"]) > 0:
+                self.cbUsePeriod.setChecked(True)
+            else:
+                self.cbUsePeriod.setChecked(False)
+        if self.cbUsePeriod.isChecked():
+            self.pteDateAndTime.setPlainText(self.projectCodesListToText(projData["default_time_periods"]))
+        else:
+            self.pteDateAndTime.setPlainText('')
+        if 'time_of_year_status' in projData:
+            if projData['time_of_year_status'] == 'Enabled':
+                self.cbTimeOfYear.setChecked(True)
             else:
                 self.cbTimeOfYear.setChecked(False)
+        else:
+            if len(projData["default_time_of_year"]) > 0:
+                self.cbTimeOfYear.setChecked(True)
+            else:
+                self.cbTimeOfYear.setChecked(False)
+        if self.cbTimeOfYear.isChecked():
+            self.pteTimeOfYear.setPlainText(self.projectCodesListToText(projData["default_time_of_year"]))
+        else:
+            self.pteTimeOfYear.setPlainText('')
         self.pteContentCodes.setPlainText(self.projectCodesListToText(projData["default_codes"]))
         self.projectUpdateCodeLists(projData)
 

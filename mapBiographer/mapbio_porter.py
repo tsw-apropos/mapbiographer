@@ -487,6 +487,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectIdentifyNewDocuments(self, serverProjKey):
         
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         nDocList = []
         dDocList = []
         localProjKey = str(self.projId)
@@ -509,6 +511,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectAssessCustomFields(self, customFields):
         
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         newCustomFields = []
         deleteCustomFields = []
         updateCustomFields = []
@@ -548,6 +552,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectCompareLists(self,localList,serverList):
 
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         # Note 1: keep track of which records have been processed to avoid
         # redundant processing and processing errors
         # Note 2: the content or value is viewed as being of primary importance
@@ -599,6 +605,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectAssessUsePeriods(self, serverUsePeriods):
         
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         newUsePeriods = []
         deleteUsePeriods = []
         updateUsePeriods = []
@@ -623,6 +631,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectAssessTimesOfYear(self, serverTimesOfYear):
 
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         newTimesOfYear = []
         deleteTimesOfYear = []
         updateTimesOfYear = []
@@ -646,6 +656,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectAssessContentCodes(self, serverContentCodes):
 
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         newContentCodes = []
         deleteContentCodes = []
         updateContentCodes = []
@@ -665,10 +677,17 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     # project report updates
     #
-    def projectReportUpdates(self,updateCF,updateUP,updateToY,updateCC):
+    def projectReportUpdates(self,updateCF,updateUP,updateToY,updateCC,statusUP,statusToY):
 
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
+            QgsMessageLog.logMessage(' - use period: %s' % statusUP)
+            QgsMessageLog.logMessage(' - time of year: %s' % statusToY)
+        projKey = str(self.projId)
         if len(updateCF) > 0 or len(updateUP) > 0 or  len(updateToY) > 0 \
-            or len(updateCC) > 0:
+        or len(updateCC) > 0:
+            if self.debug == True:            
+                QgsMessageLog.logMessage(' - checking changes and status')
             updateExisting = True
             appendText = "Within the current project, the following updates are required:\n"
             # note that document updates not supported
@@ -681,6 +700,12 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     appendText += '    "%s" (%s) required changed to %s\n' % (subrec[0]['name'],subrec[0]['code'],str(subrec[1]['required']))
             else:
                 appendText += '    None\n'
+            # use period status
+            if 'use_period_status' in self.projDict['projects'][projKey]:
+                if self.projDict['projects'][projKey]['use_period_status'] <> statusUP:
+                    appendText += 'Use Period status is now %s\n' % statusUP
+                else:
+                    appendText += 'Use Period status is unchanged\n'
             # use periods
             appendText += 'Use Periods to update: \n'
             if len(updateUP) > 0:
@@ -688,6 +713,12 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     appendText += '    %s - "%s" changed to "%s"\n' % (subrec[1],subrec[2],subrec[5])
             else:
                 appendText += '    None\n'
+            # time of year status
+            if 'time_of_year_status' in self.projDict['projects'][projKey]:
+                if self.projDict['projects'][projKey]['time_of_year_status'] <> statusToY:
+                    appendText += 'Time of Year status is now %s\n' % statusToY
+                else:
+                    appendText += 'Time of Year status is unchanged\n'
             # times of year
             appendText += 'Times of Year to update: \n'
             if len(updateToY) > 0:
@@ -704,8 +735,26 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                 appendText += '    None\n'
             appendText += '\n'
         else:
+            if self.debug == True:            
+                QgsMessageLog.logMessage(' - checking status only')
+            appendText = "Within the current project, the following updates are required:\n"
             updateExisting = False
-            appendText = "No updates found for existing project.\n\n"
+            # use period status
+            if 'use_period_status' in self.projDict['projects'][projKey]:
+                if self.projDict['projects'][projKey]['use_period_status'] <> statusUP:
+                    appendText += 'Use Period status is now %s\n' % statusUP
+                    updateExisting = True
+                else:
+                    appendText += 'Use Period status is unchanged\n'
+            # time of year status
+            if 'time_of_year_status' in self.projDict['projects'][projKey]:
+                if self.projDict['projects'][projKey]['time_of_year_status'] <> statusToY:
+                    appendText += 'Time of Year status is now %s\n' % statusToY
+                    updateExisting = True
+                else:
+                    appendText += 'Time of Year status is unchanged\n'
+            if updateExisting == False:
+                appendText = "No updates found for existing project.\n\n"
             
         return(updateExisting,appendText)
         
@@ -714,6 +763,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectReportAdditions(self,appendText,nDocList,newCF,newUP,newToY,newCC):
 
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         if len(nDocList) > 0 or len(newCF) > 0 or len(newUP) > 0 or \
             len(newToY) > 0 or len(newCC) > 0:
             addToExisting = True
@@ -766,6 +817,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectReportDeletions(self,appendText,dDocList,deleteCF,deleteUP,deleteToY,deleteCC):
     
+        if self.debug == True:
+            QgsMessageLog.logMessage(self.myself())
         if len(deleteCF) > 0 or len(deleteUP) > 0 or len(deleteToY) > 0 or \
             len(deleteCC) > 0:
             deleteExisting = True
@@ -850,9 +903,23 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     newCF = []
                     deleteCF = []
                 # use periods
-                updateUP,newUP,deleteUP = self.projectAssessUsePeriods(value['default_time_periods'])
+                if value['default_use_period_level'] == 'EN':
+                    updateUP,newUP,deleteUP = self.projectAssessUsePeriods(value['default_time_periods'])
+                    statusUP = 'Enabled'
+                else:
+                    updateUP = []
+                    newUP = []
+                    deleteUP = []
+                    statusUP = 'Disabled'
                 # times of year
-                updateToY,newToY,deleteToY = self.projectAssessTimesOfYear(value['default_time_of_year_values'])
+                if value['default_time_of_year_level'] == 'EN':
+                    updateToY,newToY,deleteToY = self.projectAssessTimesOfYear(value['default_time_of_year_values'])
+                    statusToY = 'Enabled'
+                else:
+                    updateToY = []
+                    newToY = []
+                    deleteToY = []
+                    statusToY = 'Disabled'
                 # content codes
                 updateCC,newCC,deleteCC = self.projectAssessContentCodes(value['default_codes'])
                 matchFound = True
@@ -886,9 +953,10 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     'updateCF':updateCF,'newCF':newCF,'deleteCF':deleteCF,\
                     'updateUP':updateUP,'newUP':newUP,'deleteUP':deleteUP,\
                     'updateToY':updateToY,'newToY':newToY,'deleteToY':deleteToY,\
-                    'updateCC': updateCC,'newCC':newCC,'deleteCC':deleteCC}
+                    'updateCC': updateCC,'newCC':newCC,'deleteCC':deleteCC,
+                    'statusUP':statusUP, 'statusToY': statusToY}
                 # report updates
-                self.updateExisting,appendText = self.projectReportUpdates(updateCF,updateUP,updateToY,updateCC)
+                self.updateExisting,appendText = self.projectReportUpdates(updateCF,updateUP,updateToY,updateCC,statusUP,statusToY)
                 self.addToExisting,appendText = self.projectReportAdditions(appendText,nDocList,newCF,newUP,newToY,newCC)
                 self.deleteExisting,appendText = self.projectReportDeletions(appendText,dDocList,deleteCF,deleteUP,deleteToY,deleteCC)
                 reportText += appendText
@@ -1164,18 +1232,28 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             for rec in prjSrcDict['default_codes']:
                 defaultCodes.append([rec['code'],rec['label']])
             defCode = defaultCodes[0][0]
-        # process time periods
-        if prjSrcDict['default_time_periods'] == []:
+        # process use / time periods
+        if prjSrcDict['default_use_period_level'] == 'DA':
             timePeriods = []
+            statusUP = 'Disabled'
+        elif prjSrcDict['default_time_periods'] == []:
+            timePeriods = []
+            statusUP = 'Enabled'
         else:
             timePeriods = []
+            statusUP = 'Enabled'
             for rec in prjSrcDict['default_time_periods']:
                 timePeriods.append(['%s : %s' % (rec['start'],rec['end']),rec['label']])
         # process times of year
-        if prjSrcDict['default_time_of_year_values'] == []:
+        if prjSrcDict['default_time_of_year_level'] == 'DA':
             timesOfYear = []
+            statusToY = 'Disabled'
+        elif prjSrcDict['default_time_of_year_values'] == []:
+            timesOfYear = []
+            statusToY = 'Enabled'
         else:
             timesOfYear = []
+            statusToY = 'Enabled'
             for rec in prjSrcDict['default_time_of_year_values']:
                 timesOfYear.append([",".join(str(x) for x in rec['months']),rec['label']])
         # process documents
@@ -1253,7 +1331,9 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             "citation": prjSrcDict['citation'],
             "source": prjSrcDict['source'],
             "default_codes": defaultCodes,
+            'use_period_status': statusUP,
             "default_time_periods": timePeriods,
+            'time_of_year_status': statusToY,
             "default_time_of_year": timesOfYear,
             "ns_code": defCode,
             "pt_code": defCode,
@@ -1495,9 +1575,11 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             else:
                 self.projDict['projects'][str(self.projId)]['custom_fields'] = [rec]
         # use periods
+        self.projDict['projects'][str(self.projId)]['use_period_status'] = self.projUpdate['statusUP']
         for rec in self.projUpdate['newUP']:
             self.projDict['projects'][str(self.projId)]['default_time_periods'].append([rec[1],rec[2]])
         # times of year
+        self.projDict['projects'][str(self.projId)]['time_of_year_status'] = self.projUpdate['statusToY']
         for rec in self.projUpdate['newToY']:
             self.projDict['projects'][str(self.projId)]['default_time_of_year'].append([",".join(str(x) for x in rec[1]),rec[2]])
         # content codes
@@ -1519,6 +1601,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     break
         # use periods
         self.pbStepProgress.setValue(45)
+        self.projDict['projects'][str(self.projId)]['use_period_status'] = self.projUpdate['statusUP']
         for srv in self.projUpdate['updateUP']:
             for cUP in self.projDict['projects'][str(self.projId)]['default_time_periods']:
                 if srv[4] == cUP[0]:
@@ -1526,6 +1609,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     break
         # times of year
         self.pbStepProgress.setValue(65)
+        self.projDict['projects'][str(self.projId)]['time_of_year_status'] = self.projUpdate['statusToY']
         for srv in self.projUpdate['updateToY']:
             for cToY in self.projDict['projects'][str(self.projId)]['default_time_of_year']:
                 sToY = [",".join(str(x) for x in srv[4]),srv[5]]
@@ -1559,6 +1643,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     break
         # use periods
         self.pbStepProgress.setValue(45)
+        self.projDict['projects'][str(self.projId)]['use_period_status'] = self.projUpdate['statusUP']
         for srv in self.projUpdate['deleteUP']:
             upCnt = len(self.projDict['projects'][str(self.projId)]['default_time_periods'])
             for x in range(upCnt):
@@ -1569,6 +1654,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     break
         # times of year
         self.pbStepProgress.setValue(65)
+        self.projDict['projects'][str(self.projId)]['time_of_year_status'] = self.projUpdate['statusToY']
         for srv in self.projUpdate['deleteToY']:
             sToY = ",".join(str(x) for x in srv[1])
             toyCnt = len(self.projDict['projects'][str(self.projId)]['default_time_of_year'])
@@ -1672,8 +1758,6 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
     #
     def projectFileSave(self):
 
-        if self.debug:
-            QgsMessageLog.logMessage(self.myself())
         # connect
         nf = os.path.join(self.dirName,'lmb-project-info.json')
         if os.path.exists(nf):
