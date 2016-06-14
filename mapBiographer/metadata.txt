@@ -22,7 +22,7 @@ email=info@louistoolkit.ca
 # Optional items:
 
 # Uncomment the following line and add your changelog entries:
-changelog=Improved handling of enabled / disabled status for use period and time of year settings from LOUIS Heritage.
+changelog=Improved notification of portions of interviews requiring human validation in LOUIS Heritage.
 
 # tags are comma separated with spaces allowed
 tags=Aboriginal, Indigenous, Traditional Knowledge, Traditional Land Use, Interviews, Use and Occupancy Mapping, Heritage, Local Knowledge
