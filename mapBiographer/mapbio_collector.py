@@ -5240,10 +5240,12 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     def photoCopy(self, sourceFile):
         
         filePath, fileName = os.path.split(sourceFile)
-        destFile = os.path.join(self.dirName,'images',fileName)
+        # add unique prefix
+        destFileName = 'p%d-i%d-s%d-%s' % (self.projId, self.intvId, self.currentCodeNumber, fileName)
+        destFile = os.path.join(self.dirName,'images',destFileName)
         if sourceFile <> destFile:
             shutil.copy(sourceFile,destFile)
-        return(destFile,fileName)
+        return(destFile,destFileName)
         
     #
     # edit photo

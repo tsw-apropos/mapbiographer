@@ -56,8 +56,9 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.debug = False
         if self.debug:
             self.myself = lambda: inspect.stack()[1][3]
-        if self.debug:
             QgsMessageLog.logMessage(self.myself())
+        self.testing = False
+        if self.testing:
             self.lblURL.setVisible(True)
             self.leURL.setVisible(True)
             self.leURL.setText('https://aproposinfosystems.com')
@@ -1397,17 +1398,13 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                         sectionChanged = True
                     if sectionChanged == True:
                         documentChanged = True
-                        if 'HumanValidationRequired' not in value['tags']:
-                            value['tags'].append('HumanValidationRequired')
+                        value['hvr'] = True
+                        value['hvrnote'] = 'One or more content codes changed.'
                         value['note'] += 'Above changes made %s\n\n' % datetime.datetime.now().isoformat()[:16]
                 # write file
                 f = open(fName,'w')
                 f.write(json.dumps(docDict,indent=4))
                 f.close()
-                # update document note
-                if documentChanged == True:
-                    if 'HumanValidationRequired' not in docListValue['tags']:
-                        docListValue['tags'].append('HumanValidationRequired')
 
     #
     # update project documents to record changes when a custom field is deleted
@@ -1434,17 +1431,13 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                             sectionChanged = True
                     if sectionChanged == True:
                         documentChanged = True
-                        if 'HumanValidationRequired' not in value['tags']:
-                            value['tags'].append('HumanValidationRequired')
+                        value['hvr'] = True
+                        value['hvrnote'] = 'One or more custom fields were deleted.'
                         value['note'] += 'Above changes made %s\n\n' % datetime.datetime.now().isoformat()[:16]
                 # write file
                 f = open(fName,'w')
                 f.write(json.dumps(docDict,indent=4))
                 f.close()
-                # update document note
-                if documentChanged == True:
-                    if 'HumanValidationRequired' not in docListValue['tags']:
-                        docListValue['tags'].append('HumanValidationRequired')
     
     #
     # update project documents when a use period value is deleted
@@ -1470,17 +1463,13 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                         sectionChanged = True
                     if sectionChanged == True:
                         documentChanged = True
-                        if 'HumanValidationRequired' not in value['tags']:
-                            value['tags'].append('HumanValidationRequired')
+                        value['hvr'] = True
+                        value['hvrnote'] = 'One or more default use periods was deleted.'
                         value['note'] += 'Above changes made %s\n\n' % datetime.datetime.now().isoformat()[:16]
                 # write file
                 f = open(fName,'w')
                 f.write(json.dumps(docDict,indent=4))
                 f.close()
-                # update document note
-                if documentChanged == True:
-                    if 'HumanValidationRequired' not in docListValue['tags']:
-                        docListValue['tags'].append('HumanValidationRequired')
         
     #
     # update project documents when a time of year value is deleted
@@ -1506,17 +1495,13 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                         sectionChanged = True
                     if sectionChanged == True:
                         documentChanged = True
-                        if 'HumanValidationRequired' not in value['tags']:
-                            value['tags'].append('HumanValidationRequired')
+                        value['hvr'] = True
+                        value['hvrnote'] = 'One or more default times of year was deleted.'
                         value['note'] += 'Above changes made %s\n\n' % datetime.datetime.now().isoformat()[:16]
                 # write file
                 f = open(fName,'w')
                 f.write(json.dumps(docDict,indent=4))
                 f.close()
-                # update document note
-                if documentChanged == True:
-                    if 'HumanValidationRequired' not in docListValue['tags']:
-                        docListValue['tags'].append('HumanValidationRequired')
         
     #
     # update project documents when a content code is deleted
@@ -1546,17 +1531,13 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                         sectionChanged = True
                     if sectionChanged == True:
                         documentChanged = True
-                        if 'HumanValidationRequired' not in value['tags']:
-                            value['tags'].append('HumanValidationRequired')
+                        value['hvr'] = True
+                        value['hvrnote'] = 'One or more content codes were deleted.'
                         value['note'] += 'Above changes made %s\n\n' % datetime.datetime.now().isoformat()[:16]
                 # write file
                 f = open(fName,'w')
                 f.write(json.dumps(docDict,indent=4))
                 f.close()
-                # update document note
-                if documentChanged == True:
-                    if 'HumanValidationRequired' not in docListValue['tags']:
-                        docListValue['tags'].append('HumanValidationRequired')
                         
     #
     # import process additions

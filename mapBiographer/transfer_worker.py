@@ -199,6 +199,7 @@ class transferContent(QtCore.QObject):
     #
     def oggCreate(self, srcFile, destFile):
 
+        import platform
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
@@ -210,9 +211,12 @@ class transferContent(QtCore.QObject):
             exeName = rv
         if exeName <> '' and os.path.exists(exeName):
             callList = [exeName,srcFile,'-o',destFile]
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'),stdin=subprocess.PIPE,stderr=open(os.devnull,'wb'),startupinfo=si)
+            if platform.system() == 'Windows':
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'),stdin=subprocess.PIPE,stderr=open(os.devnull,'wb'),startupinfo=si)
+            else:
+                p = subprocess.Popen(callList, stdout=open(os.devnull,'wb'),stdin=subprocess.PIPE,stderr=open(os.devnull,'wb'))
             p.communicate()
         else:
             return(-1)
@@ -445,10 +449,18 @@ class transferContent(QtCore.QObject):
                         "the_geom": geomText,
                         "the_geom_source": geomSource
                     }
+                    # process human validation
+                    if 'hvr' in value:
+                        sectionDict['human_validation_required'] = True
+                        sectionDict['human_validation_required_note'] = value['hvrnote']
+                    else:
+                        sectionDict['human_validation_required'] = False
+                        sectionDict['human_validation_required_note'] = None
                     # add custom fields
                     tempDict = {}
                     for cf in self.customFields:
-                        tempDict[cf['code']] = value[cf['code']]
+                        if cf['code'] in value and value[cf['code']] <> "":
+                                tempDict[cf['code']] = value[cf['code']]
                     sectionDict['custom_fields'] = tempDict
                     # copy media files
                     for rec in value['media_files']:
