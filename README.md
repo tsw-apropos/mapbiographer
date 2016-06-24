@@ -9,6 +9,8 @@ In version 1.1 sketch mode has been added to provide natural way to draw line an
 
 In version 1.1.3 the navigator panel was replaced by a tool bar to save screen space and give a larger effective size to the map.
 
+In version 1.2.x various improvements were made to importing transcripts and in communication with the LOUIS Heritage web service.
+
 For basic use and install instructions see:
 
-http://aproposinfosystems.com/products/mapbiographer/
+https://www.louistoolkit.ca/ourtools/map-biographer/
