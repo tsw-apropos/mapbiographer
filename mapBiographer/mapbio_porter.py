@@ -936,7 +936,8 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
                     dupFound = True
             if dupFound == False:
                 nPartList.append(value['code'])
-        QgsMessageLog.logMessage('participants checked')
+        if self.debug == True:
+            QgsMessageLog.logMessage('participants checked')
         if matchFound == True:
             if isUpload == True:
                 if len(updateCF) > 0 or len(newCF) > 0 or len(deleteCF) > 0 or \

@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'ui_mapbio_transcript_importer.ui'
 #
-# Created by: PyQt4 UI code generator 4.11.1
+# Created by: PyQt4 UI code generator 4.11.4
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -113,10 +113,14 @@ class Ui_mapbioTranscriptImporter(object):
 
     def retranslateUi(self, mapbioTranscriptImporter):
         mapbioTranscriptImporter.setWindowTitle(_translate("mapbioTranscriptImporter", "Import Features", None))
+        self.lblSourceFile.setToolTip(_translate("mapbioTranscriptImporter", "The text file with the transcript.", None))
         self.lblSourceFile.setText(_translate("mapbioTranscriptImporter", "Source File:", None))
+        self.leSourceFile.setToolTip(_translate("mapbioTranscriptImporter", "The text file with the transcript.", None))
         self.tbSelectSourceFile.setToolTip(_translate("mapbioTranscriptImporter", "<html><head/><body><p>Click here to set the LOUIS Map Biographer default projects directory.</p></body></html>", None))
         self.tbSelectSourceFile.setText(_translate("mapbioTranscriptImporter", "...", None))
-        self.lbNewSectionText.setText(_translate("mapbioTranscriptImporter", "New Section Text", None))
+        self.lbNewSectionText.setToolTip(_translate("mapbioTranscriptImporter", "This text should appear immediately before the start of all new sections.", None))
+        self.lbNewSectionText.setText(_translate("mapbioTranscriptImporter", "New Section Text:", None))
+        self.leNewSectionText.setToolTip(_translate("mapbioTranscriptImporter", "This text should appear immediately before the start of all new sections.", None))
         self.leNewSectionText.setText(_translate("mapbioTranscriptImporter", ">>NS>>", None))
         self.hgbSectionCodes.setToolTip(_translate("mapbioTranscriptImporter", "Note: If not matching old codes will be kept as legacy codes", None))
         self.hgbSectionCodes.setTitle(_translate("mapbioTranscriptImporter", "Create new sections and codes?", None))

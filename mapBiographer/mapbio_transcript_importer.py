@@ -102,7 +102,7 @@ class mapBiographerTranscriptImporter(QtGui.QDialog, Ui_mapbioTranscriptImporter
 
         # read in text file
         f = open(self.leSourceFile.text(),'r')
-        textLines = [line.decode('utf-8').strip() for line in f.readlines()]
+        textLines = [line.decode('utf-8-sig').strip() for line in f.readlines()]
         f.close()
         # process text
         self.sectionCnt = 0
@@ -119,40 +119,42 @@ class mapBiographerTranscriptImporter(QtGui.QDialog, Ui_mapbioTranscriptImporter
             lookRight = False
         noteNext = False
         sectionText = ''
+        tempCode = ''
         for line in textLines:
             if line.startswith(self.nsText) == True:
-                # add text to previous section
-                if self.sectionCnt > 0:
-                    self.sectionList[self.sectionCnt-1][2] = sectionText
+                # start of a new section detected
+                if sectionText <> '' and self.sectionCnt > 0:
+                    # if have a section read and ready to save do so
+                    self.sectionList.append([self.sectionCnt,tempCode,sectionText])
                     sectionText = ''
-                # find codes if needed
                 if findCodes == True:
+                    # check if we need to find codes on this line or the next
                     if lookRight:
                         tempCode = line[len(self.nsText):].strip()
                         if tempCode <> '':
                             self.codeList.append(tempCode)
                         else:
                             tempCode = ''
-                        self.sectionList.append([self.sectionCnt,tempCode,''])
                         noteNext = False
                     else:
                         noteNext = True
-                else:
-                    self.sectionList.append([self.sectionCnt,'',''])
+                # increment section count
                 self.sectionCnt += 1
             elif noteNext == True:
+                # check if looking for code on current line because previous
+                # line had started with nsText
                 if line <> '':
                     tempCode = line.strip()
                     self.codeList.append(tempCode)
                 else:
                     tempCode = ''
-                self.sectionList.append([self.sectionCnt-1,tempCode,''])
                 noteNext = False
             else:
+                # just add to the section text
                 sectionText = sectionText + line + '\n'
         # add last part of file to last section
         if self.sectionCnt > 0:
-            self.sectionList[self.sectionCnt-1][2] = sectionText
+            self.sectionList.append([self.sectionCnt,tempCode,sectionText])
             sectionText = ''
         # check if matching is happening and report match count
         if self.rbMatchCodes.isChecked() == True:

@@ -307,7 +307,7 @@ class transferContent(QtCore.QObject):
             if (arcExists and (intvDateTime > izfDateTime or projDateTime > izfDateTime)) or arcExists == False:    
                 # remove zip file if it exists
                 if os.path.exists(intZFileName):
-                    os.path.remove(intZFileName)
+                    os.remove(intZFileName)
                 # create document folder
                 # create document directory
                 docDir = os.path.join(exDir,'p%d-i%d' % (int(self.projId),int(docDict['id'])))
@@ -717,7 +717,8 @@ class transferContent(QtCore.QObject):
             fName = 'lmb-p%d-i%d-archive.zip' % (self.projId,self.docKeys[x])
             fPath = os.path.join(srcDir, fName)
             if os.path.exists(fPath):
-                QgsMessageLog.logMessage(fName)
+                if self.debug:
+                    QgsMessageLog.logMessage(fName)
                 fields = [('username',self.account),
                     ('password',self.password),
                     ('project_id',self.destProjId),

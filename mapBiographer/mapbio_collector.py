@@ -1623,6 +1623,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.interviewState = 'Finished'
         # reset map tool
         self.canvas.unsetMapTool(self.canvas.mapTool())
+        # reset tab selection
+        self.twSectionContent.setCurrentIndex(0)
         # clean up
         if self.lmbMode == 'Interview':
             self.modeButton.setEnabled(True)
@@ -5444,7 +5446,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                         idx = fieldDict[dataDict['security']][0]
                         dataSecurity = str(attrs[idx])
                     else:
-                        dataSecurity = "PR"
+                        dataSecurity = self.projDict["projects"][str(self.projId)]["documents"][str(self.intvId)]["default_data_security"]
                     if dataDict['contentCodes'] <> '--None--':
                         idx = fieldDict[dataDict['contentCodes']][0]
                         contentCodes = str(attrs[idx]).split(',')
@@ -5645,9 +5647,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                         "code_integer": self.currentSequence,
                         "sequence": self.currentSequence,
                         "section_code": self.currentSectionCode,
-                        "legacy_code": section[1].encode('utf-8'),
-                        "data_security": "PR",
-                        "section_text": section[2].encode('utf-8'),
+                        "legacy_code": section[1].encode('utf-8-sig'),
+                        "data_security": self.projDict["projects"][str(self.projId)]["documents"][str(self.intvId)]["default_data_security"],
+                        "section_text": section[2].encode('utf-8-sig'),
                         "note": "",
                         "use_period": "N",
                         "time_of_year": "N",
@@ -5693,7 +5695,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         if self.debug and self.debugDepth >= 1:
             QgsMessageLog.logMessage(self.myself())
         s = QtCore.QSettings()
-        fname = QtGui.QFileDialog.getOpenFileName(self, 'Select Audio File', '.', '*.wav')
+        fname = QtGui.QFileDialog.getOpenFileName(self, 'Select Audio File', self.dirName, '*.wav')
         if os.path.exists(fname):
             destFile = "lmb-p%d-i%d-media.wav" % (self.projId,self.intvId)
             destPath = os.path.join(self.dirName,'media',destFile)
