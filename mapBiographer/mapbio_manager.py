@@ -29,6 +29,7 @@ import os, datetime, time, json, sys
 import inspect, imp
 import platform, subprocess
 from qgis.utils import plugins
+from copy import deepcopy
 
 class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     
@@ -154,6 +155,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         #
         # interview basic info actions
         QtCore.QObject.connect(self.pbIntNew, QtCore.SIGNAL("clicked()"), self.interviewNew)
+        QtCore.QObject.connect(self.pbIntCopy, QtCore.SIGNAL("clicked()"), self.interviewCopy)
         QtCore.QObject.connect(self.pbIntCancel, QtCore.SIGNAL("clicked()"), self.interviewCancelEdits)
         QtCore.QObject.connect(self.pbIntSave, QtCore.SIGNAL("clicked()"), self.interviewSave)
         QtCore.QObject.connect(self.pbIntDelete, QtCore.SIGNAL("clicked()"), self.interviewDelete)
@@ -2384,6 +2386,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # controls on this tab
         self.tblInterviews.setDisabled(True)
         self.pbIntNew.setDisabled(True)
+        self.pbIntCopy.setDisabled(True)
         self.pbIntSave.setEnabled(True)
         self.pbIntCancel.setEnabled(True)
         self.pbIntDelete.setEnabled(True)
@@ -2405,6 +2408,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.interviewClearValues()
         self.tblInterviews.setEnabled(True)
         self.pbIntNew.setEnabled(True)
+        self.pbIntCopy.setEnabled(True)
         self.pbIntSave.setDisabled(True)
         self.pbIntCancel.setDisabled(True)
         self.pbIntDelete.setDisabled(True)
@@ -2442,7 +2446,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     # new interview
     #
-    def interviewNew(self):
+    def interviewNew(self, newDoc = None):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
@@ -2454,28 +2458,35 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.intvId = self.intvIdMax
         nCode = "newcode%s" % self.intvId
         self.intvCodeList.append(nCode)
-        temp = {
-            "id": self.intvId,
-            "code": nCode,
-            "title": "",
-            "description": "",
-            "location": "",
-            "note": "",
-            "tags": [],
-            "default_data_security": "PR",
-            "status": "N",
-            "creator": "",
-            "publisher": "",
-            "subject": "",
-            "language": "",
-            "source": "",
-            "citation": "",
-            "rights_statement": "",
-            "rights_holder": "",
-            "start_datetime": "2000-01-01 13:00",
-            "end_datetime": "2000-01-01 14:00",
-            "participants": {}
-        }
+        if newDoc == None:
+            temp = {
+                "id": self.intvId,
+                "code": nCode,
+                "title": "",
+                "description": "",
+                "location": "",
+                "note": "",
+                "tags": [],
+                "default_data_security": "PR",
+                "status": "N",
+                "creator": "",
+                "publisher": "",
+                "subject": "",
+                "language": "",
+                "source": "",
+                "citation": "",
+                "rights_statement": "",
+                "rights_holder": "",
+                "start_datetime": "2000-01-01 13:00",
+                "end_datetime": "2000-01-01 14:00",
+                "participants": {}
+            }
+        else:
+            temp = newDoc
+            temp['id'] = self.intvId
+            temp['code'] = nCode
+            temp['participants'] = {}
+            temp['status'] = 'N'
         self.projDict["projects"][str(self.projId)]["documents"][str(self.intvId)] = temp
         rCnt = len(self.projDict["projects"][str(self.projId)]["documents"])
         self.tblInterviews.setRowCount(rCnt)
@@ -2485,7 +2496,27 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.leInterviewCode.setFocus()
         self.interviewEnableEdit()
         self.projectFileSave()
+
+    #
+    # copy and create new interview
+    #
+    def interviewCopy(self):
         
+        codeList = []
+        docs = self.projDict["projects"][str(self.projId)]["documents"]
+        for key, value in docs.iteritems():
+            codeList.append(value['code'])
+        intvCode, ok = QtGui.QInputDialog.getItem(self, "Select source interview", 
+            "Interview Codes", codeList, 0, False)
+            
+        if ok and intvCode:
+            newDoc = None
+            for key, value in docs.iteritems():
+                if intvCode == value['code']:
+                    newDoc = deepcopy(value)
+            if newDoc <> None:
+                self.interviewNew(newDoc)
+
     #
     # update interview
     #

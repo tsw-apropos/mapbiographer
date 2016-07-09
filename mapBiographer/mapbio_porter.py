@@ -448,6 +448,10 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         
         if self.debug == True:
             QgsMessageLog.logMessage(self.myself())
+        # disable UI and enable cancel button
+        self.cbProject.setDisabled(True)
+        self.pbUpload.setDisabled(True)
+        self.pbCancel.setEnabled(True)
          # start action process in thread
         self.errorText = ''
         # instantiate transferContent worker

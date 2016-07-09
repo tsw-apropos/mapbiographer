@@ -2459,6 +2459,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         else:
             self.zoomToFeature = False
         # select a section
+        self.textSearchSetState()
         if self.lwSectionList.currentItem() <> None:
             if self.lmbMode in ('Import','Transcribe') and self.mediaState == 'playing':
                 if lmb_audioEnabled:
@@ -3698,6 +3699,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
     
     def textSearchSetState(self):
         
+        self.leSearch.setStyleSheet("QLineEdit { background-color : white;}")
         if self.leSearch.text() == "":
             self.tbSearchNext.setDisabled(True)
             self.tbSearchPrevious.setDisabled(True)
@@ -3725,9 +3727,10 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             cursor.setPosition(pos+len(searchPhrase),QtGui.QTextCursor.KeepAnchor) 
             self.pteSectionText.setTextCursor(cursor)
         else:
-            message = 'The text "%s" was not found after the current position' % searchText
-            QtGui.QMessageBox.information(self, 'Search',
-                message, QtGui.QMessageBox.Ok)
+            #message = 'The text "%s" was not found after the current position' % searchText
+            #QtGui.QMessageBox.information(self, 'Search',
+            #    message, QtGui.QMessageBox.Ok)
+            self.leSearch.setStyleSheet("QLineEdit { background-color : red;}")
 
     #
     # search from current position or end for string
@@ -3746,9 +3749,10 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             cursor.setPosition(pos+len(searchPhrase),QtGui.QTextCursor.KeepAnchor) 
             self.pteSectionText.setTextCursor(cursor)
         else:
-            message = 'The text "%s" was not found before the current position' % searchText
-            QtGui.QMessageBox.information(self, 'Search',
-                message, QtGui.QMessageBox.Ok)
+            #message = 'The text "%s" was not found before the current position' % searchText
+            #QtGui.QMessageBox.information(self, 'Search',
+            #    message, QtGui.QMessageBox.Ok)
+            self.leSearch.setStyleSheet("QLineEdit { background-color : red;}")
 
     #
     #####################################################
@@ -5624,13 +5628,14 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         recording_datetime = self.interviewStart
         if len(sectionList) > 0:
             self.interviewState = 'Import'
-            # update sections
             if updateSections == True:
+                # update sections
                 for key, value in self.intvDict.iteritems():
                     for section in sectionList:
                         if key == section[1]:
                             self.intvDict[key]['section_text'] = section[2].encode('utf-8')
             else:
+                # add sections to the end
                 # check if interview file exists and if not create it
                 fname = "lmb-p%d-i%d-data.json" % (self.projId,self.intvId)
                 nf = os.path.join(self.dirName,"interviews",fname)
@@ -5639,8 +5644,9 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                     self.intvDict = {}
                 # now begin adding sections
                 for section in sectionList:
+                    self.currentSequence = self.maxCodeNumber + 1
+                    self.maxCodeNumber = self.currentSequence
                     self.currentPrimaryCode = self.defaultCode
-                    self.currentSequence += 1
                     self.currentSectionCode = self.sectionCalculateSectionCode(self.currentPrimaryCode,self.currentSequence)
                     temp = {
                         "code_type": self.currentPrimaryCode,

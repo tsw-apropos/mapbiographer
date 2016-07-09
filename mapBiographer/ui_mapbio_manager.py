@@ -480,7 +480,7 @@ class Ui_mapbioManager(object):
         self.tbxParticipants.setMinimumSize(QtCore.QSize(440, 365))
         self.tbxParticipants.setObjectName(_fromUtf8("tbxParticipants"))
         self.pgBasicInfo = QtGui.QWidget()
-        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 397, 442))
+        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 440, 494))
         self.pgBasicInfo.setObjectName(_fromUtf8("pgBasicInfo"))
         self.gridLayout_12 = QtGui.QGridLayout(self.pgBasicInfo)
         self.gridLayout_12.setMargin(0)
@@ -746,6 +746,9 @@ class Ui_mapbioManager(object):
         self.pbIntNew = QtGui.QPushButton(self.frInterviewControls)
         self.pbIntNew.setObjectName(_fromUtf8("pbIntNew"))
         self.hlInterviewList.addWidget(self.pbIntNew)
+        self.pbIntCopy = QtGui.QPushButton(self.frInterviewControls)
+        self.pbIntCopy.setObjectName(_fromUtf8("pbIntCopy"))
+        self.hlInterviewList.addWidget(self.pbIntCopy)
         self.pbIntSave = QtGui.QPushButton(self.frInterviewControls)
         self.pbIntSave.setEnabled(False)
         self.pbIntSave.setObjectName(_fromUtf8("pbIntSave"))
@@ -769,7 +772,7 @@ class Ui_mapbioManager(object):
         self.tbxInterview.setMinimumSize(QtCore.QSize(440, 315))
         self.tbxInterview.setObjectName(_fromUtf8("tbxInterview"))
         self.pgIntBasic = QtGui.QWidget()
-        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 233, 440))
+        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 440, 494))
         self.pgIntBasic.setObjectName(_fromUtf8("pgIntBasic"))
         self.gridLayout_8 = QtGui.QGridLayout(self.pgIntBasic)
         self.gridLayout_8.setMargin(0)
@@ -1301,6 +1304,7 @@ class Ui_mapbioManager(object):
         self.lblInterviews.setText(_translate("mapbioManager", "Interview List", None))
         self.tblInterviews.setSortingEnabled(False)
         self.pbIntNew.setText(_translate("mapbioManager", "New", None))
+        self.pbIntCopy.setText(_translate("mapbioManager", "Copy", None))
         self.pbIntSave.setText(_translate("mapbioManager", "Save", None))
         self.pbIntCancel.setText(_translate("mapbioManager", "Cancel", None))
         self.pbIntDelete.setText(_translate("mapbioManager", "Delete", None))
@@ -1352,7 +1356,7 @@ class Ui_mapbioManager(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.2.8</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">LOUIS Map Biographer Version 1.3.0</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-weight:600;\"><br /></p>\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">To submit comments about this version please visit <a href=\"louistoolkit.ca/tools/mapbiographer\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/tools/mapbiographer</span></a> or our contact page at <a href=\"louistoolkit.ca/contact\"><span style=\" text-decoration: underline; color:#0000ff;\">louistoolkit.ca/contact</span></a>.</p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"
