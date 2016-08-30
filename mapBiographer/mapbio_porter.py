@@ -51,6 +51,7 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
         self.downloadDict = {}
         self.resize(500, 250)
         self.frProgress.setVisible(False)
+        self.setModal(True)
 
         # debug setup
         self.debug = False
@@ -68,9 +69,12 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
             self.leURL.setText('https://louistoolkit.ca')
 
         self.cbTransferAction.clear()
-        self.cbTransferAction.addItems(['--None--','Create Heritage Archive', \
-            'Create GeoJSON / Shapefile Archive','Get New Projects and Participants from Heritage',\
-            'Update Current Project and Participants from Heritage','Upload Completed Interviews to Heritage'])
+        if self.projId == None:
+            self.cbTransferAction.addItems(['--None--','Get New Projects and Participants from Heritage'])
+        else:
+            self.cbTransferAction.addItems(['--None--','Create Heritage Archive', \
+                'Create GeoJSON / Shapefile Archive','Get New Projects and Participants from Heritage',\
+                'Update Current Project and Participants from Heritage','Upload Completed Interviews to Heritage'])
         # connect widgets to functions
         QtCore.QObject.connect(self.pbClose, QtCore.SIGNAL("clicked()"), self.transferClose)
         QtCore.QObject.connect(self.pbTransfer, QtCore.SIGNAL("clicked()"), self.transferRun)
@@ -88,7 +92,12 @@ class mapBiographerPorter(QtGui.QDialog, Ui_mapbioPorter):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
-        self.actionIdx = self.cbTransferAction.currentIndex()
+        if self.projId == None:
+            self.actionIdx = self.cbTransferAction.currentIndex()
+            if self.actionIdx <> 0:
+                self.actionIdx = 3
+        else:
+            self.actionIdx = self.cbTransferAction.currentIndex()
         if self.actionIdx == 0:
             # disable interface
             self.pbTransfer.setDisabled(True)

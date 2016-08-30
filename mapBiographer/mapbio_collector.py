@@ -81,6 +81,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # begin setup process
         QtGui.QDockWidget.__init__(self)
         self.setupUi(self)
+        self.resize(self.minimumWidth(), self.height())
+        self.setWindowTitle('LMB Collector - Control Panel')
         self.iface = iface
         self.canvas = self.iface.mapCanvas()
         self.iface.newProject()
@@ -234,6 +236,8 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.lwTOYMonths.setVisible(False)
         QtCore.QObject.connect(self.cbUsePeriod, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionSelectUsePeriod)
         QtCore.QObject.connect(self.cbTimeOfYear, QtCore.SIGNAL("currentIndexChanged(int)"), self.sectionSelectTimeOfYear)
+        self.lblLegacyCode.setVisible(False)
+        self.lblLegacyCodeValue.setVisible(False)
         # create tool bar
         self.toolBarCreate()
         #
@@ -598,7 +602,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
             self.projId = None
         else:
             self.projId = int(rv)
-        if os.path.exists(os.path.join(self.dirName,'lmb-project-info.json')):
+        if os.path.exists(os.path.join(self.dirName,'lmb-project-info.json')) and self.projId <> None:
             result = self.projectFileRead()
             return(result)
         else:
@@ -1709,6 +1713,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1724,6 +1729,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1739,6 +1745,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1765,6 +1772,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1783,6 +1791,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1801,6 +1810,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1818,6 +1828,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1835,6 +1846,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -1852,6 +1864,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
                 # create and place label
                 label = QtGui.QLabel()
                 label.setText(cf['name'])
+                label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.grSectionEdit.addWidget(label,rCnt,0)
                 label.setVisible(True)
                 # create widget
@@ -2399,9 +2412,13 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # set text
         self.pteSectionText.setPlainText(self.sectionData["section_text"])
         if self.sectionData["legacy_code"] <> "":
-            self.lblLegacyCode.setText('LC: %s' % self.sectionData["legacy_code"])
+            self.lblLegacyCode.setVisible(True)
+            self.lblLegacyCodeValue.setVisible(True)
+            self.lblLegacyCodeValue.setText(self.sectionData["legacy_code"])
         else:
-            self.lblLegacyCode.setText('LC: None')
+            self.lblLegacyCode.setVisible(False)
+            self.lblLegacyCodeValue.setVisible(False)
+            self.lblLegacyCodeValue.setText('None')
         # load custom fields
         self.customFieldsLoad()
         # add photos to tab if visible

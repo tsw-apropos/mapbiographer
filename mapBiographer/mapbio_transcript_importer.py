@@ -40,7 +40,8 @@ class mapBiographerTranscriptImporter(QtGui.QDialog, Ui_mapbioTranscriptImporter
         self.dirName = dirName
         self.projDict = projDict
         self.intvDict = intvDict
-
+        self.setModal(True)
+        
         # debug setup
         self.debug = False
         if self.debug:

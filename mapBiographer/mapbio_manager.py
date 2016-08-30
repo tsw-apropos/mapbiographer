@@ -90,15 +90,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # main form
         QtCore.QObject.connect(self.pbDialogClose, QtCore.SIGNAL("clicked()"), self.closeDialog)
         # map biographer settings tab actions
-        # qgis settings
-        QtCore.QObject.connect(self.tbSelectProjectDir, QtCore.SIGNAL("clicked()"), self.qgsSettingsGetDir)
-        QtCore.QObject.connect(self.cbCurrentProject, QtCore.SIGNAL("currentIndexChanged(int)"), self.qgsSettingsSelectCreateProject)
-        QtCore.QObject.connect(self.tbOggEnc, QtCore.SIGNAL("clicked()"), self.qgsSettingsGetOgg)
-        QtCore.QObject.connect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsSave)
-        QtCore.QObject.connect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsCancel)
-        QtCore.QObject.connect(self.pbDeleteProject, QtCore.SIGNAL("clicked()"), self.projectDelete)
-        QtCore.QObject.connect(self.pbSystemTest, QtCore.SIGNAL("clicked()"), self.qgsTestSystem)
-        QtCore.QObject.connect(self.leOggEnc, QtCore.SIGNAL("textChanged(const QString&)"), self.qgsSettingsEnableEdit)
+
         # lmb project settings
         QtCore.QObject.connect(self.cbMaxScale, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectSetMapScaleDown)
         QtCore.QObject.connect(self.cbMinScale, QtCore.SIGNAL("currentIndexChanged(int)"), self.projectSetMapScaleUp)
@@ -112,7 +104,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         QtCore.QObject.connect(self.cbReferenceLayer, QtCore.SIGNAL("currentIndexChanged(int)"), self.qgisReferenceLayerUpdate)
         QtCore.QObject.connect(self.pbSaveProjectMapSettings, QtCore.SIGNAL("clicked()"), self.projectMapSettingsSave)
         QtCore.QObject.connect(self.pbCancelProjectMapSettings, QtCore.SIGNAL("clicked()"), self.projectMapSettingsCancel)
-        QtCore.QObject.connect(self.pbTransfer, QtCore.SIGNAL("clicked()"), self.transferData)
         #
         # project details tab states
         QtCore.QObject.connect(self.leProjectCode, QtCore.SIGNAL("textChanged(QString)"), self.projectDetailsEnableEdit)
@@ -177,15 +168,14 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         self.qgsProjectChanged = True
         self.projectState = 'load'
 
-        try:
-            self.qgsSettingsRead()
-            self.projectDetailsDisableEdit()
-            self.projectMapSettingsDisableEdit()
-            self.qgsSettingsDisableEdit()
-            self.participantDisableEdit()
-            self.interviewDisableEdit()
-        except:
+        self.qgsSettingsDisableEdit()
+        self.projectMapSettingsDisableEdit()
+        self.qgsSettingsRead()
+        self.qgsSettingsControlsConnect()
+        if self.projId == None:
             self.projectDisable()
+        else:
+            self.projectEnable()
             self.projectDetailsDisableEdit()
             self.projectMapSettingsDisableEdit()
             self.qgsSettingsDisableEdit()
@@ -210,6 +200,42 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     ########################################################
     #               Map Biographer Settings Tab            #
     ########################################################
+    #
+    # connect settings controls
+    #
+    def qgsSettingsControlsConnect(self):
+    
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # qgis settings
+        QtCore.QObject.connect(self.tbSelectProjectDir, QtCore.SIGNAL("clicked()"), self.qgsSettingsGetDir)
+        QtCore.QObject.connect(self.cbCurrentProject, QtCore.SIGNAL("currentIndexChanged(int)"), self.qgsSettingsSelectCreateProject)
+        QtCore.QObject.connect(self.tbOggEnc, QtCore.SIGNAL("clicked()"), self.qgsGetOgg)
+        QtCore.QObject.connect(self.leOggEnc, QtCore.SIGNAL("textChanged(const QString&)"), self.qgsSetOgg)
+        QtCore.QObject.connect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsSave)
+        QtCore.QObject.connect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsCancel)
+        QtCore.QObject.connect(self.pbDeleteProject, QtCore.SIGNAL("clicked()"), self.projectDelete)
+        QtCore.QObject.connect(self.pbTransfer, QtCore.SIGNAL("clicked()"), self.transferData)
+        QtCore.QObject.connect(self.pbSystemTest, QtCore.SIGNAL("clicked()"), self.qgsTestSystem)
+    
+    #
+    # disconnect settings controls
+    #
+    def qgsSettingsControlsDisconnect(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # qgis settings
+        result = QtCore.QObject.disconnect(self.tbSelectProjectDir, QtCore.SIGNAL("clicked()"), self.qgsSettingsGetDir)
+        result = QtCore.QObject.disconnect(self.cbCurrentProject, QtCore.SIGNAL("currentIndexChanged(int)"), self.qgsSettingsSelectCreateProject)
+        result = QtCore.QObject.disconnect(self.tbOggEnc, QtCore.SIGNAL("clicked()"), self.qgsGetOgg)
+        result = QtCore.QObject.disconnect(self.leOggEnc, QtCore.SIGNAL("textChanged(const QString&)"), self.qgsSetOgg)
+        result = QtCore.QObject.disconnect(self.pbSaveSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsSave)
+        result = QtCore.QObject.disconnect(self.pbCancelSettings, QtCore.SIGNAL("clicked()"), self.qgsSettingsCancel)
+        result = QtCore.QObject.disconnect(self.pbDeleteProject, QtCore.SIGNAL("clicked()"), self.projectDelete)
+        result = QtCore.QObject.disconnect(self.pbTransfer, QtCore.SIGNAL("clicked()"), self.transferData)
+        result = QtCore.QObject.disconnect(self.pbSystemTest, QtCore.SIGNAL("clicked()"), self.qgsTestSystem)
+
     #
     # read qgis LMB settings
     #
@@ -271,8 +297,11 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def qgsSettingsSelectCreateProject(self):
         
-        if self.projectState <> 'load':
-            self.qgsSettingsEnableEdit()
+        self.qgsSettingsEnableEdit()
+        if self.cbCurrentProject.currentIndex() == 0:
+            # select no project
+            self.projId = None
+        elif self.projectState <> 'load':
             if self.debug:
                 QgsMessageLog.logMessage(self.myself())
             if self.cbCurrentProject.currentIndex() == 1:
@@ -284,6 +313,8 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                         messageText = "The project code %s already exists. A unique code is required" % newName
                         response = QtGui.QMessageBox.warning(self, 'Warning',
                             messageText, QtGui.QMessageBox.Ok)
+                        self.qgsSettingsCancel()
+                        self.qgsSettingsControlsConnect()
                     else:
                         self.projCodeList.append(newName)
                         self.projCodeList = list(set(self.projCodeList))
@@ -312,15 +343,11 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                         self.cbCurrentProject.addItem(newName)
                         self.cbCurrentProject.setCurrentIndex(self.cbCurrentProject.count()-1)
                         self.projectFileSave()
+                        self.qgsSettingsSave()
                 else:
                     self.projId = None
                     self.cbCurrentProject.setCurrentIndex(0)
-            elif self.cbCurrentProject.currentIndex() == 0:
-                # select no project
-                self.projId = None
-                self.frProjectMapSettings.setDisabled(True)
             elif self.cbCurrentProject.currentIndex() > 1:
-                self.frProjectMapSettings.setEnabled(True)
                 # select an existing project
                 for key,value in self.projDict["projects"].iteritems():
                     if value["code"] == self.cbCurrentProject.currentText():
@@ -331,23 +358,24 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def qgsSettingsEnableEdit(self):
 
-        if self.pbDialogClose.isEnabled():
-            if self.debug:
-                QgsMessageLog.logMessage(self.myself())
-            # enable save and cancel
-            self.pbSaveSettings.setEnabled(True)
-            self.pbCancelSettings.setEnabled(True)
-            self.pbSystemTest.setDisabled(True)
-            if self.pbDeleteProject.isEnabled():
-                self.pbDeleteProject.setDisabled(True)
-            self.twMapBioSettings.tabBar().setDisabled(True)
-            self.frProjectMapSettings.setDisabled(True)
-            # other tabs
-            self.tbProjectDetails.setDisabled(True)
-            self.tbPeople.setDisabled(True)
-            self.tbInterviews.setDisabled(True)
-            # dialog close
-            self.pbDialogClose.setDisabled(True)
+#        if self.pbDialogClose.isEnabled():
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        # enable save and cancel
+        self.pbSaveSettings.setEnabled(True)
+        self.pbCancelSettings.setEnabled(True)
+        self.pbTransfer.setDisabled(True)
+        self.pbSystemTest.setDisabled(True)
+        if self.pbDeleteProject.isEnabled():
+            self.pbDeleteProject.setDisabled(True)
+        self.twMapBioSettings.tabBar().setDisabled(True)
+        self.frProjectMapSettings.setDisabled(True)
+        # other tabs
+        self.tbProjectDetails.setDisabled(True)
+        self.tbPeople.setDisabled(True)
+        self.tbInterviews.setDisabled(True)
+        # dialog close
+        self.pbDialogClose.setDisabled(True)
 
     #
     # disable settings buttons
@@ -359,15 +387,17 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # disable save and cancel
         self.pbSaveSettings.setDisabled(True)
         self.pbCancelSettings.setDisabled(True)
+        self.pbTransfer.setEnabled(True)
         self.pbSystemTest.setEnabled(True)
         if self.cbCurrentProject.count() > 2 and self.projId <> None:
             self.pbDeleteProject.setEnabled(True)
         self.twMapBioSettings.tabBar().setEnabled(True)
-        self.frProjectMapSettings.setEnabled(True)
-        # other tabs
-        self.tbProjectDetails.setEnabled(True)
-        self.tbPeople.setEnabled(True)
-        self.tbInterviews.setEnabled(True)
+        if self.projId <> None:
+            self.frProjectMapSettings.setEnabled(True)
+            # other tabs
+            self.tbProjectDetails.setEnabled(True)
+            self.tbPeople.setEnabled(True)
+            self.tbInterviews.setEnabled(True)
         # dialog close
         self.pbDialogClose.setEnabled(True)
         
@@ -379,16 +409,18 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
+        self.qgsSettingsControlsDisconnect()
         s = QtCore.QSettings()
         s.setValue('mapBiographer/projectDir', self.dirName)
         s.setValue('mapBiographer/projectId', self.projId)
         s.setValue('mapBiographer/oggencFile', self.oggencFile)
         self.qgsSettingsDisableEdit()
-        if self.projId <> None:
-            self.projectLoad()
-        else:
+        if self.projId == None:
             self.qgisProjectClear()
-            self.projectMapSettingsCancel()
+            self.frProjectMapSettings.setDisabled(True)
+        self.projectLoad()
+        self.qgsSettingsControlsConnect()
+            
     #
     # cancel LMB settings
     #
@@ -397,13 +429,16 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         #
+        self.qgsSettingsControlsDisconnect()
         self.qgsSettingsRead()
         self.qgsSettingsDisableEdit()
         self.projectLoad()
+        self.qgsSettingsControlsConnect()
+
     #
-    # set location oggenc program
+    # get location oggenc program
     #
-    def qgsSettingsGetOgg(self):
+    def qgsGetOgg(self):
         
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
@@ -417,11 +452,23 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             self.leOggEnc.setText('')
         self.qgsSettingsEnableEdit()
         
+    #
+    # set oggenc value
+    #
+    def qgsSetOgg(self):
+        
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
+        #
+        self.oggencFile = self.leOggEnc.text()
+        self.qgsSettingsEnableEdit()
+
     #   
     # test system libraries and plugins
     #
     def qgsTestSystem(self):
         
+        everythingOk = True
         try:
             # test basic audio
             import pyaudio, wave
@@ -431,9 +478,10 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             try:
                 retText = subprocess.check_output(callList)
                 oggVer = retText[retText.rindex(' ')+1:-1]
-                messageText = messageText + ' Oggenc2 executable found. Version is %s.' % oggVer
+                messageText = messageText + ' Oggenc2 executable found (version: %s.)' % oggVer
             except:
                 messageText = messageText + ' Oggenc2 executable could not be found.'
+                everythingOk = False
             # test plugins
             if 'redLayer' in plugins:
                 if 'joinmultiplelines' in plugins:
@@ -441,24 +489,31 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 else:
                     messageText = messageText + ' The Red Layer Plugin is installed but the Join Multiple Lines plugin is missing.'
                     messageText = messageText + ' Please install missing plugin.'
+                    everythingOk = False
             else:
+                everythingOk = False
                 if 'joinmultiplelines' in plugins:
                     messageText = messageText + ' The Red Layer Plugin is missing. The Join Multiple Lines plugin is installed.'
                     messageText = messageText + ' Please install missing plugin.'
                 else:
                     messageText = messageText + ' The Red Layer Plugin and the Join Multiple Lines plugin are missing.'
                     messageText = messageText + ' Please install missing plugins.'
+            if everythingOk:
+                messageText = 'System is ready to use.\n' + messageText
+            else:
+                messageText = 'System configruation is incomplete.\n' + messageText
             QtGui.QMessageBox.information(self, 'System Status',
                 messageText, QtGui.QMessageBox.Ok)
             return(0)
         except:
             messageText = 'PyAudio is not installed. Please install manually.'
+            everythingOk = False
             # test audio conversion
             callList = [self.leOggEnc.text(),'--version']
             try:
                 retText = subprocess.check_output(callList)
                 oggVer = retText[retText.rindex(' ')+1:-1]
-                messageText = messageText + ' Oggenc2 executable found. Version is %s.' % oggVer
+                messageText = messageText + ' Oggenc2 executable found (version: %s.)' % oggVer
             except:
                 messageText = messageText + ' Oggenc2 executable could not be found.'
             # test plugins
@@ -475,6 +530,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                 else:
                     messageText = messageText + ' The Red Layer Plugin and the Join Multiple Lines plugin are missing.'
                     messageText = messageText + ' Please install missing plugins.'
+            messageText = 'System configruation is incomplete.\n' + messageText
             QtGui.QMessageBox.critical(self, 'Error',
                 messageText, QtGui.QMessageBox.Ok)
             return(0)
@@ -619,6 +675,10 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
                    messageText, QtGui.QMessageBox.Ok)
             else:
                 del self.projDict["projects"][str(self.projId)]
+                if self.projId in self.projCodeList:
+                    self.projCodeList.remove(self.projId)
+                self.projId = None
+                self.qgsSettingsSave()
                 self.projectFileSave()
                 self.projectFileRead()
                 self.projectDetailsEnableEdit()
@@ -721,11 +781,10 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
-        # main tabs
+        self.frProjectMapSettings.setDisabled(True)
         self.tbProjectDetails.setEnabled(True)
         self.tbPeople.setEnabled(True)
         self.tbInterviews.setEnabled(True)
-        self.pbTransfer.setEnabled(True)
         
     #
     # disable project
@@ -734,11 +793,11 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
-        # main tabs
+        self.frProjectMapSettings.setDisabled(True)
         self.tbProjectDetails.setDisabled(True)
         self.tbPeople.setDisabled(True)
         self.tbInterviews.setDisabled(True)
-        self.pbTransfer.setDisabled(True)
+        #self.pbTransfer.setDisabled(True)
         
     #
     # load project
@@ -819,7 +878,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
             # enable save and cancel
             self.pbSaveProjectMapSettings.setEnabled(True)
             self.pbCancelProjectMapSettings.setEnabled(True)
-            self.pbTransfer.setDisabled(True)
             self.twMapBioSettings.tabBar().setDisabled(True)
             self.tbSelectProjectDir.setDisabled(True)
             self.cbCurrentProject.setDisabled(True)
@@ -840,7 +898,6 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         # disable save and cancel
         self.pbSaveProjectMapSettings.setDisabled(True)
         self.pbCancelProjectMapSettings.setDisabled(True)
-        self.pbTransfer.setEnabled(True)
         self.twMapBioSettings.tabBar().setEnabled(True)
         self.tbSelectProjectDir.setEnabled(True)
         self.cbCurrentProject.setEnabled(True)
@@ -856,6 +913,8 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def projectMapSettingsSave(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         # use temp variable to keep lines shorter
         temp = {}
         temp["max_scale"] = self.cbMaxScale.currentText()
@@ -878,6 +937,8 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def projectMapSettingsCancel(self):
         
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         self.projectFileRead()
         self.projectLoad()
         self.projectMapSettingsDisableEdit()
@@ -1147,7 +1208,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     # load QgsProject
     #
-    def qgisProjectLoad( self, projectName ):
+    def qgisProjectLoad(self, projectName):
 
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
@@ -2969,27 +3030,12 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
     #
     def transferData(self):
 
+        if self.debug:
+            QgsMessageLog.logMessage(self.myself())
         self.importDialog = mapBiographerPorter(self.iface, self.dirName, self.projDict, self.projId)
         # show the dialog
         self.importDialog.show()
         # Run the dialog event loop
         result = self.importDialog.exec_()
-        # reset after done
-        self.projectState = 'load'
-        try:
-            self.qgsSettingsRead()
-            self.projectDetailsDisableEdit()
-            self.projectMapSettingsDisableEdit()
-            self.qgsSettingsDisableEdit()
-            self.participantDisableEdit()
-            self.interviewDisableEdit()
-        except:
-            self.projectDisable()
-            self.projectDetailsDisableEdit()
-            self.projectMapSettingsDisableEdit()
-            self.qgsSettingsDisableEdit()
-            self.participantDisableEdit()
-            self.interviewDisableEdit()
-        self.projectState = 'edit'
-        # close after done
-        #self.closeDialog()
+        self.qgsSettingsRead()
+        self.qgsSettingsCancel()

@@ -48,6 +48,7 @@ class mapBiographerImporter(QtGui.QDialog, Ui_mapbioImporter):
         self.lastDir = lastDir
         self.optionalFields = optionalFields
         self.customFields = customFields
+        self.setModal(True)
         
         # debug setup
         self.debug = False
