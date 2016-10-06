@@ -247,7 +247,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         s = QtCore.QSettings()
         rv = s.value('mapBiographer/projectDir')
         if rv == None:
-            self.dirName = '.'
+            self.dirName = None
         else:
             self.dirName = rv
         self.leProjectDir.setText(self.dirName)
@@ -264,7 +264,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         else:
             self.oggencFile = rv
         self.leOggEnc.setText(self.oggencFile)
-        if os.path.exists(os.path.join(self.dirName,'lmb-project-info.json')):
+        if self.dirName <> None and os.path.exists(os.path.join(self.dirName,'lmb-project-info.json')):
             self.projectFileRead()
         else:
             self.projectFileCreate()
@@ -622,7 +622,7 @@ class mapBiographerManager(QtGui.QDialog, Ui_mapbioManager):
         if self.debug:
             QgsMessageLog.logMessage(self.myself())
         # make sure path exist
-        if os.path.exists(self.dirName):
+        if self.dirName <> None and os.path.exists(self.dirName):
             nf = os.path.join(self.dirName,'lmb-project-info.json') 
             # only create file if one does not exist
             if os.path.exists(nf) == False:

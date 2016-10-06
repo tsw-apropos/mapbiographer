@@ -5116,7 +5116,7 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # merge to a single line
         self.sketchMerge(sketchLayer)
         # convert to polygon
-        fNameBase = './' + datetime.datetime.now().isoformat()[:10] + '_sketchPoly'
+        fNameBase = self.dirName + '/' + datetime.datetime.now().isoformat()[:10] + '_sketchPoly'
         processing.runalg('qgis:linestopolygons', sketchLayer, fNameBase)
         # open polygon layer
         fName = fNameBase + '.shp'
@@ -5128,10 +5128,6 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         # remove layers
         QgsMapLayerRegistry.instance().removeMapLayer( polyLayer.id() )
         QgsMapLayerRegistry.instance().removeMapLayer( sketchLayer.id() )
-        # remove shapefile
-        fList = glob.glob(fNameBase+'.*')
-        for f in fList:
-            os.remove(f)
         # clear interface
         self.clearButton.click()
         # set to default line code
@@ -5141,6 +5137,13 @@ class mapBiographerCollector(QtGui.QDockWidget, Ui_mapbioCollector):
         self.mapToolsPlacePolygon(newGeom)
         # change out of sketchMode
         self.tbSketchMode.click()
+        # remove shapefile
+        try:
+            fList = glob.glob(fNameBase+'.*')
+            for f in fList:
+                os.remove(f)
+        except:
+            pass
 
     #
     # convert sketch to layer

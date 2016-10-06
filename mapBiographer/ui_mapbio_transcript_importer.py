@@ -26,9 +26,8 @@ class Ui_mapbioTranscriptImporter(object):
     def setupUi(self, mapbioTranscriptImporter):
         mapbioTranscriptImporter.setObjectName(_fromUtf8("mapbioTranscriptImporter"))
         mapbioTranscriptImporter.setWindowModality(QtCore.Qt.ApplicationModal)
-        mapbioTranscriptImporter.resize(525, 250)
+        mapbioTranscriptImporter.resize(525, 253)
         mapbioTranscriptImporter.setMinimumSize(QtCore.QSize(525, 250))
-        mapbioTranscriptImporter.setMaximumSize(QtCore.QSize(525, 253))
         self.gridLayout = QtGui.QGridLayout(mapbioTranscriptImporter)
         self.gridLayout.setObjectName(_fromUtf8("gridLayout"))
         self.hlSourceFile = QtGui.QHBoxLayout()

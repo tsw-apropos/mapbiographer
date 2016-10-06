@@ -480,7 +480,7 @@ class Ui_mapbioManager(object):
         self.tbxParticipants.setMinimumSize(QtCore.QSize(440, 365))
         self.tbxParticipants.setObjectName(_fromUtf8("tbxParticipants"))
         self.pgBasicInfo = QtGui.QWidget()
-        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 440, 516))
+        self.pgBasicInfo.setGeometry(QtCore.QRect(0, 0, 400, 404))
         self.pgBasicInfo.setObjectName(_fromUtf8("pgBasicInfo"))
         self.gridLayout_12 = QtGui.QGridLayout(self.pgBasicInfo)
         self.gridLayout_12.setMargin(0)
@@ -592,7 +592,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_12.addLayout(self.gridLayout_11, 2, 0, 1, 1)
         self.tbxParticipants.addItem(self.pgBasicInfo, _fromUtf8(""))
         self.pgAddresses = QtGui.QWidget()
-        self.pgAddresses.setGeometry(QtCore.QRect(0, 0, 222, 170))
+        self.pgAddresses.setGeometry(QtCore.QRect(0, 0, 226, 170))
         self.pgAddresses.setObjectName(_fromUtf8("pgAddresses"))
         self.gridLayout_9 = QtGui.QGridLayout(self.pgAddresses)
         self.gridLayout_9.setMargin(0)
@@ -651,7 +651,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_9.addLayout(self.grAddresses, 1, 0, 1, 1)
         self.tbxParticipants.addItem(self.pgAddresses, _fromUtf8(""))
         self.pgTelecoms = QtGui.QWidget()
-        self.pgTelecoms.setGeometry(QtCore.QRect(0, 0, 222, 153))
+        self.pgTelecoms.setGeometry(QtCore.QRect(0, 0, 226, 153))
         self.pgTelecoms.setObjectName(_fromUtf8("pgTelecoms"))
         self.gridLayout_10 = QtGui.QGridLayout(self.pgTelecoms)
         self.gridLayout_10.setMargin(0)
@@ -772,7 +772,7 @@ class Ui_mapbioManager(object):
         self.tbxInterview.setMinimumSize(QtCore.QSize(440, 315))
         self.tbxInterview.setObjectName(_fromUtf8("tbxInterview"))
         self.pgIntBasic = QtGui.QWidget()
-        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 440, 516))
+        self.pgIntBasic.setGeometry(QtCore.QRect(0, 0, 236, 418))
         self.pgIntBasic.setObjectName(_fromUtf8("pgIntBasic"))
         self.gridLayout_8 = QtGui.QGridLayout(self.pgIntBasic)
         self.gridLayout_8.setMargin(0)
@@ -914,7 +914,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_8.addLayout(self.glInterview, 0, 0, 1, 1)
         self.tbxInterview.addItem(self.pgIntBasic, _fromUtf8(""))
         self.pgIntExtra = QtGui.QWidget()
-        self.pgIntExtra.setGeometry(QtCore.QRect(0, 0, 176, 327))
+        self.pgIntExtra.setGeometry(QtCore.QRect(0, 0, 184, 327))
         self.pgIntExtra.setObjectName(_fromUtf8("pgIntExtra"))
         self.gridLayout_5 = QtGui.QGridLayout(self.pgIntExtra)
         self.gridLayout_5.setMargin(0)
@@ -978,7 +978,7 @@ class Ui_mapbioManager(object):
         self.gridLayout_5.addLayout(self.gridLayout_7, 0, 0, 1, 1)
         self.tbxInterview.addItem(self.pgIntExtra, _fromUtf8(""))
         self.pgIntParticipants = QtGui.QWidget()
-        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 222, 209))
+        self.pgIntParticipants.setGeometry(QtCore.QRect(0, 0, 226, 209))
         self.pgIntParticipants.setObjectName(_fromUtf8("pgIntParticipants"))
         self.gridLayout_4 = QtGui.QGridLayout(self.pgIntParticipants)
         self.gridLayout_4.setMargin(0)
@@ -1349,7 +1349,7 @@ class Ui_mapbioManager(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Sans Serif\'; font-size:10pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:600;\">LOUIS Map Biographer Version 1.3.1</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:\'Cantarell\'; font-size:11pt; font-weight:600;\">LOUIS Map Biographer Version 1.3.2</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:\'Cantarell\'; font-size:11pt; font-weight:600;\"><br /></p>\n"
 "<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:\'Cantarell\'; font-size:11pt;\">For additional information about this tool please visit </span><a href=\"https://www.louistoolkit.ca/ourtools/map-biographer/\"><span style=\" font-family:\'Cantarell\'; font-size:11pt; text-decoration: underline; color:#0000ff;\">https://www.louistoolkit.ca/ourtools/map-biographer/</span></a><span style=\" font-family:\'Cantarell\'; font-size:11pt;\">.</span></p>\n"
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:\'Cantarell\'; font-size:11pt;\"><br /></p>\n"

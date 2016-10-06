@@ -27,7 +27,6 @@ class Ui_mapbioPorter(object):
         mapbioPorter.setObjectName(_fromUtf8("mapbioPorter"))
         mapbioPorter.resize(500, 488)
         mapbioPorter.setMinimumSize(QtCore.QSize(500, 100))
-        mapbioPorter.setMaximumSize(QtCore.QSize(500, 488))
         mapbioPorter.setSizeGripEnabled(False)
         self.verticalLayout_3 = QtGui.QVBoxLayout(mapbioPorter)
         self.verticalLayout_3.setObjectName(_fromUtf8("verticalLayout_3"))
